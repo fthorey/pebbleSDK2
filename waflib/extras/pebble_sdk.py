@@ -14,19 +14,23 @@ import waflib.extras.objcopy as objcopy
 import waflib.extras.c_preproc as c_preproc
 import waflib.extras.xcode_pebble
 from waflib import Logs, Options
+from waflib.Task import SKIP_ME, ASK_LATER
 from waflib.TaskGen import before_method,feature, after_method
 SDK_VERSION={'major':5,'minor':0}
 def options(opt):
 	opt.load('gcc')
-	opt.add_option('-d','--debug',action='store_true',default=False,dest='debug',help='Build in debug mode')
-	opt.add_option('-t','--timestamp',dest='timestamp',help="Use a specific timestamp to label this package (ie, your repository's last commit time), defaults to time of build")
+	opt.add_option('-d','--debug',action='store_true', default=False,
+                       dest='debug', help='Build in debug mode')
+
+	opt.add_option('-t','--timestamp',dest='timestamp',
+                       help="Use a specific timestamp to label this package \
+                       (ie, your repository's last commit time), defaults to time of build")
 
 	opt.add_option('--pebble-sdk', action='store', default='',
                        help = 'Set pebble SDK path', dest='pebblesdk')
 
 	opt.add_option('--arm-toolchain-path', action='store', default='',
                        help = 'Set pebble ARM toolchain path', dest='armpath')
-
 
 def configure(conf):
 	conf.load('python')
