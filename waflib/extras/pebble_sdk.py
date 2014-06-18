@@ -15,7 +15,7 @@ import waflib.extras.objcopy as objcopy
 import waflib.extras.c_preproc as c_preproc
 import waflib.extras.xcode_pebble
 from waflib import Logs, Options
-from waflib.Task import SKIP_ME, ASK_LATER
+from waflib.Task import TaskBase, SKIP_ME, ASK_LATER
 from waflib.TaskGen import before_method,feature, after_method
 SDK_VERSION={'major':5,'minor':0}
 def options(opt):
@@ -90,19 +90,19 @@ def configure(conf):
 	print"Found Pebble SDK in\t\t\t : {}".format(pebble_sdk.abspath())
 	conf.env.PEBBLE_SDK=pebble_sdk.abspath()
 
-@feature('appinfo')
-def init_appinfo(self):
+@feature('pbpack')
+def init_pbpack(self):
         self.appinfo_json_node = getattr(self, 'jsonfile', False)
 
-@feature('appinfo')
-@after_method('init_appinfo')
+@feature('pbpack')
+@after_method('init_pbpack')
 @before_method('process_source')
 def gen_files(self):
         # Generate c file
         coutnode = self.appinfo_json_node.change_ext('.auto.c')
         c_tsk = self.create_task('appinfoc', [self.appinfo_json_node], [coutnode])
 
-        # Add c file back to source for future processing
+        # # Add c file back to source for future processing
         # if not self.source: self.source = []
         # self.source.append(coutnode)
 
@@ -111,7 +111,7 @@ def gen_files(self):
         tools_path=sdk_folder.find_dir('tools')
 
         # Generate datapack
-        pack_tsk = self.create_task('gendatapack', [self.appinfo_json_node], [])
+        pack_tsk = self.create_task('gendatapack', [self.appinfo_json_node])
         # Set some resources
         pack_tsk.resources_path_node = self.bld.srcnode.find_node('resources')
         pack_tsk.resource_id_header_node = self.path.find_or_declare('src/resource_ids.auto.h')
@@ -127,6 +127,7 @@ from waflib import Task
 class gendatapack(Task.Task):
         color   = 'PINK'
         quiet   = True
+        ext_out = ['.h']
 
         def scan(self):
                 found_lst = []
@@ -282,6 +283,11 @@ class gendatapack(Task.Task):
                 pbpack_tasks.append(header_tsk)
                 self.more_tasks.append(header_tsk)
 
+                try:
+                        self.generator.pbpack_tasks.append(header_tsk)
+                except AttributeError:
+                        self.generator.pbpack_tasks = [header_tsk]
+
                 # Last but not least, generate pbpack
                 pbpack_tsk = self.generator.create_task('pbpack',
                                                         [manifest_node, table_node, data_node],
@@ -300,6 +306,7 @@ class pbpack(Task.Task):
 
 class genheader(Task.Task):
         color = 'BLUE'
+        ext_out = ['.h']
 
         def run(self):
                 header_string = '{} {} resource_header {} {} {} {}'.format(self.env.PYTHON[0],
@@ -357,23 +364,22 @@ class appinfoc(Task.Task):
                 generate_appinfo.generate_appinfo(self.inputs[0].abspath(),
                                                   self.outputs[0].abspath())
 
-# class appinfoh(Task.Task):
-# 	"""generate appinfo h file"""
-# 	color   = 'GREEN'
+def runnable_status(self):
+        for g in self.generator.bld.groups:
+                for tg in g:
+                        if isinstance(tg, TaskBase):
+                                continue
 
-#         def run(self):
-#                 import waflib.extras.process_resources as process_resources
-# 		with open(appinfo_json_node.abspath(),'r')as f:
-# 			appinfo=json.load(f)
-# 		resources_dict=appinfo['resources']
-# 		process_resources.gen_resource_deps(bld,
-#                                                     resources_dict=resources_dict,
-#                                                     resources_path_node=bld.path.get_src().find_node('resources'),
-#                                                     output_pack_node=bld.path.get_bld().make_node('app_resources.pbpack'),
-#                                                     output_id_header_node=resource_id_header,resource_header_path="pebble.h",
-#                                                     tools_path=sdk_folder.find_dir('tools'))
+                        for tsk in getattr(tg, 'pbpack_tasks', []):
+                                try:
+                                        os.stat(tsk.outputs[0].abspath())
+                                except:
+                                        return Task.ASK_LATER
 
-# 	sdk_folder=bld.root.find_dir(bld.env['PEBBLE_SDK'])
+        return Task.Task.runnable_status(self)
+
+from waflib.Tools.c import c
+c.runnable_status = runnable_status
 
 def append_to_attr(self,attr,new_values):
 	values=self.to_list(getattr(self,attr,[]))
@@ -392,15 +398,15 @@ def setup_pebble_c(self):
 def setup_cprogram(self):
 	append_to_attr(self,'linkflags',['-mcpu=cortex-m3','-mthumb','-fPIE'])
 
-# @feature('cprogram_pebble')
-# @before_method('process_source')
-# def setup_pebble_cprogram(self):
-# 	sdk_folder=self.bld.root.find_dir(self.bld.env['PEBBLE_SDK'])
-# 	append_to_attr(self,'source',[self.bld.path.get_bld().make_node('appinfo.auto.c')])
-# 	append_to_attr(self,'stlibpath',[sdk_folder.find_dir('lib').abspath()])
-# 	append_to_attr(self,'stlib',['pebble'])
-# 	append_to_attr(self,'linkflags',['-Wl,-Map,pebble-app.map,--emit-relocs'])
-# 	setattr(self,'ldscript',sdk_folder.find_node('pebble_app.ld').path_from(self.bld.path))
+@feature('cprogram_pebble')
+@before_method('process_source')
+def setup_pebble_cprogram(self):
+	sdk_folder=self.bld.root.find_dir(self.bld.env['PEBBLE_SDK'])
+	append_to_attr(self,'stlibpath',[sdk_folder.find_dir('lib').abspath()])
+	append_to_attr(self,'stlib',['pebble'])
+	append_to_attr(self,'linkflags',['-Wl,-Map,pebble-app.map,--emit-relocs'])
+        if not getattr(self, 'ldscript', False):
+                setattr(self,'ldscript',sdk_folder.find_node('pebble_app.ld').path_from(self.bld.path))
 
 # @feature('pbl_bundle')
 # def make_pbl_bundle(self):
