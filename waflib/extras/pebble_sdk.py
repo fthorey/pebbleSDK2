@@ -161,6 +161,7 @@ class gendatapack(Task.Task):
                 self.more_tasks = []
 
                 pack_entries = []
+                pbpack_tasks = []
 
                 with open(self.inputs[0].abspath(),'r')as f:
                         appinfo = json.load(f)
@@ -186,6 +187,7 @@ class gendatapack(Task.Task):
                                 pbi_tsk = self.generator.create_task('procpng',
                                                                      [input_node],
                                                                      [output_node])
+                                pbpack_tasks.append(pbi_tsk)
                                 self.more_tasks.append(pbi_tsk)
 
                         # Process png-trans files -> .png.white.pbi / .png.black.pbi
@@ -196,6 +198,7 @@ class gendatapack(Task.Task):
                                         pbi_tsk = self.generator.create_task('procpng',
                                                                              [input_node],
                                                                              [output_node])
+                                        pbpack_tasks.append(pbi_tsk)
                                         self.more_tasks.append(pbi_tsk)
 
                         # Process font files -> .def_name.pfo
@@ -205,6 +208,7 @@ class gendatapack(Task.Task):
                                 font_tsk = self.generator.create_task('procfont',
                                                                       [input_node],
                                                                       [output_node])
+                                pbpack_tasks.append(font_tsk)
 
                                 m = re.search('([0-9]+)', def_name)
                                 if m == None:
@@ -229,10 +233,9 @@ class gendatapack(Task.Task):
                                 font_tsk.env.append_value('FONTHEIGHT', [str(height)])
                                 font_tsk.env.append_value('TRACKINGARG', [trackingAdjustArg])
                                 font_tsk.env.append_value('REGEXPARG', [characterRegexArg])
-
                                 self.more_tasks.append(font_tsk)
 
-                        # Not handled
+                        # File extension not handled
                         else:
                                 raise waflib.Errors.WafError("Generating resources failed")
 
@@ -243,6 +246,7 @@ class gendatapack(Task.Task):
                 pbdata_tsk = self.generator.create_task('mergedata',
                                                         [entry[0] for entry in pack_entries],
                                                         [data_node])
+                for tsk in pbpack_tasks: pbdata_tsk.set_run_after(tsk)
                 self.more_tasks.append(pbdata_tsk)
 
                 # header_tsk = self.generator.create_task('genheader',
@@ -259,10 +263,9 @@ class mergedata(Task.Task):
         def run(self):
                 cat_string="cat"
                 for entry in self.inputs:
-                        cat_string+=' "%s" '%entry.abspath()
-                cat_string += ' > "%s" '%self.outputs[0].abspath()
-                print cat_string
-                # return self.exec_command(cat_string)
+                        cat_string += ' "{}" '.format(entry.abspath())
+                cat_string += ' > "{}" '.format(self.outputs[0].abspath())
+                return self.exec_command(cat_string)
 
 class genheader(Task.Task):
         color = 'BLUE'
