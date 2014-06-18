@@ -111,9 +111,16 @@ def gen_files(self):
 
         # Generate datapack
         pack_tsk = self.create_task('gendatapack', [self.appinfo_json_node], [])
-        pack_tsk.bitmap_script = tools_path.find_node('bitmapgen.py')
-	pack_tsk.font_script = tools_path.find_node('font/fontgen.py')
+        # Set some resources
         pack_tsk.resources_path_node = self.bld.srcnode.find_node('resources')
+        pack_tsk.resource_id_header_node = self.path.find_or_declare('src/resource_ids.auto.h')
+        pack_tsk.output_pack_node = self.path.find_or_declare('app_resources.pbpack')
+
+        # Set some env
+        self.env.BITMAPSCRIPT = tools_path.find_node('bitmapgen.py').abspath()
+        self.env.FONTSCRIPT = tools_path.find_node('font/fontgen.py').abspath()
+	self.env.MDSCRIPT = tools_path.find_node('pbpack_meta_data.py').abspath()
+	self.env_RESCODESCRIPT = tools_path.find_node('generate_resource_code.py').abspath()
 
 from waflib import Task
 class gendatapack(Task.Task):
@@ -127,6 +134,7 @@ class gendatapack(Task.Task):
                         appinfo = json.load(f)
 		resources_dict=appinfo['resources']
 
+                # Process appinfo
                 for res in resources_dict['media']:
                         res_type=res["type"]
                         input_file=str(res["file"])
@@ -137,37 +145,132 @@ class gendatapack(Task.Task):
 
                         if res_type in ['raw', 'png', 'png-trans', 'font']:
                                 found_lst.append(input_node)
+                        else:
+                                waflib.Logs.error("Error Generating Resources: File: " + \
+                                                  input_file+" has specified invalid type: " + res_type)
+                                waflib.Logs.error("Must be one of (raw, png, png-trans, font)")
+                                raise waflib.Errors.WafError("Generating resources failed")
 
                 return (found_lst, [])
 
         def run(self):
                 self.more_tasks = []
 
+                pack_entries = []
+
                 with open(self.inputs[0].abspath(),'r')as f:
                         appinfo = json.load(f)
 		resources_dict=appinfo['resources']
 
-                def deploy_generator(entry):
-                        res_type=res["type"]
-                        input_file=str(res["file"])
-                        input_node=self.resources_path_node.find_node(input_file)
-			output_pbi=self.resources_path_node.find_or_declare("{}.pbi"
-                                                                            .format(input_file))
-
-                        pbi_tsk = self.generator.create_task('procpng',
-                                                             [input_node],
-                                                             [output_pbi])
-                        pbi_tsk.env.append_value('BITMAPSCRIPT',
-                                                 [self.bitmap_script.abspath()])
-
-                        self.more_tasks.append(pbi_tsk)
-
+                # Process appinfo
                 for res in resources_dict['media']:
-                        deploy_generator(res)
+
+                        res_type = res["type"]
+                        def_name = res["name"]
+                        input_file = str(res["file"])
+                        input_node = self.resources_path_node.find_node(input_file)
+
+                        # Process .raw files -> .raw
+                        if res_type == 'raw':
+                                pack_entries.append((input_node, def_name))
+                                # -> No prcess needed
+
+                        # Process png files -> .png.pbi
+                        elif res_type == 'png':
+                                output_node = input_node.change_ext('.png.pbi')
+                                pack_entries.append((output_node, def_name))
+                                pbi_tsk = self.generator.create_task('procpng',
+                                                                     [input_node],
+                                                                     [output_node])
+                                self.more_tasks.append(pbi_tsk)
+
+                        # Process png-trans files -> .png.white.pbi / .png.black.pbi
+                        elif res_type == "png-trans":
+                                for color in ['white', 'black']:
+                                        output_node = input_node.change_ext(".png.{}.pbi".format(color))
+                                        pack_entries.append((output_node,"{}_{}".format(def_name, color.upper())))
+                                        pbi_tsk = self.generator.create_task('procpng',
+                                                                             [input_node],
+                                                                             [output_node])
+                                        self.more_tasks.append(pbi_tsk)
+
+                        # Process font files -> .def_name.pfo
+                        elif res_type == "font":
+                                output_node = input_node.change_ext('.' + str(def_name) + '.pfo')
+                                pack_entries.append((output_node, def_name))
+                                font_tsk = self.generator.create_task('procfont',
+                                                                      [input_node],
+                                                                      [output_node])
+
+                                m = re.search('([0-9]+)', def_name)
+                                if m == None:
+                                        if def_name != 'FONT_FALLBACK':
+                                                raise ValueError('Font {0}: no height found in def name''\n'
+                                                                 .format(self.def_name))
+                                        height = 14
+                                else:
+                                        height = int(m.group(0))
+
+                                if 'trackingAdjust' in res:
+                                        trackingAdjustArg = '--tracking %i' % res['trackingAdjust']
+                                else:
+                                        trackingAdjustArg = ''
+
+                                if 'characterRegex' in res:
+                                        characterRegexArg = '--filter "%s"' % (res['characterRegex']
+                                                                               .encode('utf8'))
+                                else:
+                                        characterRegexArg=''
+
+                                font_tsk.env.append_value('FONTHEIGHT', [str(height)])
+                                font_tsk.env.append_value('TRACKINGARG', [trackingAdjustArg])
+                                font_tsk.env.append_value('REGEXPARG', [characterRegexArg])
+
+                                self.more_tasks.append(font_tsk)
+
+                        # Not handled
+                        else:
+                                raise waflib.Errors.WafError("Generating resources failed")
+
+                manifest_node = self.output_pack_node.change_ext('.pbpack.manifest')
+                table_node = self.output_pack_node.change_ext('.pbpack.table')
+                data_node = self.output_pack_node.change_ext('.pbpack.data')
+
+                pbdata_tsk = self.generator.create_task('mergedata',
+                                                        [entry[0] for entry in pack_entries],
+                                                        [data_node])
+                self.more_tasks.append(pbdata_tsk)
+
+                # header_tsk = self.generator.create_task('genheader',
+                #                                         [data_node],
+                #                                         [self.resource_id_header_node])
+                # header_tsk.env.append_value('TIMESTAMP',
+                #                             [int(time.time())])
+                # header_tsk.env.append_value('APPINC',
+                #                             ["pebble.h"])
+
+class mergedata(Task.Task):
+        color = 'BLUE'
+
+        def run(self):
+                cat_string="cat"
+                for entry in self.inputs:
+                        cat_string+=' "%s" '%entry.abspath()
+                cat_string += ' > "%s" '%self.outputs[0].abspath()
+                print cat_string
+                # return self.exec_command(cat_string)
+
+class genheader(Task.Task):
+        color = 'BLUE'
+        run_str = '${PYTHON} ${RESCODESCRIPT} resource_header ${TGT} ${TIMESTAMP} ${APPINC} ${SRC}'
 
 class copy(Task.Task):
         color = 'BLUE'
         run_str = 'cp ${SRC} ${TGT}'
+
+class procfont(Task.Task):
+        color = 'BLUE'
+        run_str = '${PYTHON} ${FONTSCRIPT} pfo ${FONTHEIGHT} ${TRACKINGARG} ${REGEXPARG} ${SRC} ${TGT}'
 
 class procpng(Task.Task):
         color = 'BLUE'
