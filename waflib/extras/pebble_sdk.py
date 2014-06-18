@@ -158,6 +158,7 @@ class gendatapack(Task.Task):
                 self.more_tasks = []
 
                 pack_entries = []
+                res_tasks = []
                 pbpack_tasks = []
 
                 with open(self.inputs[0].abspath(),'r')as f:
@@ -184,7 +185,7 @@ class gendatapack(Task.Task):
                                 pbi_tsk = self.generator.create_task('procpng',
                                                                      [input_node],
                                                                      [output_node])
-                                pbpack_tasks.append(pbi_tsk)
+                                res_tasks.append(pbi_tsk)
                                 self.more_tasks.append(pbi_tsk)
 
                         # Process png-trans files -> .png.white.pbi / .png.black.pbi
@@ -195,7 +196,7 @@ class gendatapack(Task.Task):
                                         pbi_tsk = self.generator.create_task('procpng',
                                                                              [input_node],
                                                                              [output_node])
-                                        pbpack_tasks.append(pbi_tsk)
+                                        res_tasks.append(pbi_tsk)
                                         self.more_tasks.append(pbi_tsk)
 
                         # Process font files -> .def_name.pfo
@@ -205,7 +206,7 @@ class gendatapack(Task.Task):
                                 font_tsk = self.generator.create_task('procfont',
                                                                       [input_node],
                                                                       [output_node])
-                                pbpack_tasks.append(font_tsk)
+                                res_tasks.append(font_tsk)
 
                                 m = re.search('([0-9]+)', def_name)
                                 if m == None:
@@ -244,14 +245,15 @@ class gendatapack(Task.Task):
                 pbdata_tsk = self.generator.create_task('mergedata',
                                                         [entry[0] for entry in pack_entries],
                                                         [data_node])
-                for tsk in pbpack_tasks: pbdata_tsk.set_run_after(tsk)
+                pbpack_tasks.append(pbdata_tsk)
+                for tsk in res_tasks: pbdata_tsk.set_run_after(tsk)
                 self.more_tasks.append(pbdata_tsk)
 
                 # Generate .pbpack.table
                 pbtable_tsk = self.generator.create_task('mergetable',
                                                         [entry[0] for entry in pack_entries],
                                                         [table_node])
-                for tsk in pbpack_tasks: pbtable_tsk.set_run_after(tsk)
+                for tsk in res_tasks: pbtable_tsk.set_run_after(tsk)
                 self.more_tasks.append(pbtable_tsk)
 
                 timestamp = int(time.time())
@@ -263,6 +265,7 @@ class gendatapack(Task.Task):
                 manifest_tsk.env.append_value('NUMFILES', [str(len(pack_entries))])
                 manifest_tsk.env.append_value('TIMESTAMP', [str(timestamp)])
                 manifest_tsk.set_run_after(pbdata_tsk)
+                pbpack_tasks.append(manifest_tsk)
                 self.more_tasks.append(manifest_tsk)
 
                 # Generate header
@@ -274,15 +277,26 @@ class gendatapack(Task.Task):
                 header_tsk.version_def_name = '--version_def_name=SYSTEM_RESOURCE_VERSION'
                 header_tsk.pack_entries = pack_entries
                 header_tsk.timestamp = str(timestamp)
-                for tsk in pbpack_tasks: pbtable_tsk.set_run_after(tsk)
+                for tsk in res_tasks: pbtable_tsk.set_run_after(tsk)
                 header_tsk.set_run_after(pbdata_tsk)
+                pbpack_tasks.append(header_tsk)
                 self.more_tasks.append(header_tsk)
+
+                # Last but not least, generate pbpack
+                pbpack_tsk = self.generator.create_task('pbpack',
+                                                        [manifest_node, table_node, data_node],
+                                                        [self.output_pack_node])
+                for tsk in pbpack_tasks: pbpack_tsk.set_run_after(tsk)
+                self.more_tasks.append(pbpack_tsk)
 
 class pbpack(Task.Task):
         color = 'BLUE'
-
         def run(self):
-                pass
+                pbpack_string = 'cat {} {} {} > {}'.format(self.inputs[0],
+                                                           self.inputs[1],
+                                                           self.inputs[2],
+                                                           self.outputs[0])
+                return self.exec_command(pbpack_string)
 
 class genheader(Task.Task):
         color = 'BLUE'
