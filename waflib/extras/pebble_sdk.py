@@ -7,6 +7,7 @@ import os
 import re
 import sys
 import time
+import shutil
 import waflib.extras.inject_metadata as inject_metadata
 import waflib.extras.ldscript as ldscript
 import waflib.extras.mkbundle as mkbundle
@@ -105,10 +106,6 @@ def gen_files(self):
         # if not self.source: self.source = []
         # self.source.append(coutnode)
 
-        # # Generate h file
-        # houtnode = self.path.find_or_declare('src/resource_ids.auto.h')
-        # h_tsk = self.create_task('appinfoh', [self.appinfo_json_node], [houtnode])
-
         # Get some tools
 	sdk_folder=self.bld.root.find_dir(self.bld.env['PEBBLE_SDK'])
         tools_path=sdk_folder.find_dir('tools')
@@ -124,7 +121,7 @@ def gen_files(self):
         self.env.BITMAPSCRIPT = tools_path.find_node('bitmapgen.py').abspath()
         self.env.FONTSCRIPT = tools_path.find_node('font/fontgen.py').abspath()
 	self.env.MDSCRIPT = tools_path.find_node('pbpack_meta_data.py').abspath()
-	self.env_RESCODESCRIPT = tools_path.find_node('generate_resource_code.py').abspath()
+	self.env.RESCODESCRIPT = tools_path.find_node('generate_resource_code.py').abspath()
 
 from waflib import Task
 class gendatapack(Task.Task):
@@ -243,19 +240,78 @@ class gendatapack(Task.Task):
                 table_node = self.output_pack_node.change_ext('.pbpack.table')
                 data_node = self.output_pack_node.change_ext('.pbpack.data')
 
+                # Generate .pbpack.data
                 pbdata_tsk = self.generator.create_task('mergedata',
                                                         [entry[0] for entry in pack_entries],
                                                         [data_node])
                 for tsk in pbpack_tasks: pbdata_tsk.set_run_after(tsk)
                 self.more_tasks.append(pbdata_tsk)
 
-                # header_tsk = self.generator.create_task('genheader',
-                #                                         [data_node],
-                #                                         [self.resource_id_header_node])
-                # header_tsk.env.append_value('TIMESTAMP',
-                #                             [int(time.time())])
-                # header_tsk.env.append_value('APPINC',
-                #                             ["pebble.h"])
+                # Generate .pbpack.table
+                pbtable_tsk = self.generator.create_task('mergetable',
+                                                        [entry[0] for entry in pack_entries],
+                                                        [table_node])
+                for tsk in pbpack_tasks: pbtable_tsk.set_run_after(tsk)
+                self.more_tasks.append(pbtable_tsk)
+
+                timestamp = int(time.time())
+
+                # Generate .pbpack.manifest
+                manifest_tsk = self.generator.create_task('manifest',
+                                                          [data_node],
+                                                          [manifest_node])
+                manifest_tsk.env.append_value('NUMFILES', [str(len(pack_entries))])
+                manifest_tsk.env.append_value('TIMESTAMP', [str(timestamp)])
+                manifest_tsk.set_run_after(pbdata_tsk)
+                self.more_tasks.append(manifest_tsk)
+
+                # Generate header
+                header_tsk = self.generator.create_task('genheader',
+                                                        [data_node] + \
+                                                        [entry[0] for entry in pack_entries],
+                                                        [self.resource_id_header_node])
+                header_tsk.resource_header_path = 'pebble.h'
+                header_tsk.version_def_name = '--version_def_name=SYSTEM_RESOURCE_VERSION'
+                header_tsk.pack_entries = pack_entries
+                header_tsk.timestamp = str(timestamp)
+                for tsk in pbpack_tasks: pbtable_tsk.set_run_after(tsk)
+                header_tsk.set_run_after(pbdata_tsk)
+                self.more_tasks.append(header_tsk)
+
+class pbpack(Task.Task):
+        color = 'BLUE'
+
+        def run(self):
+                pass
+
+class genheader(Task.Task):
+        color = 'BLUE'
+
+        def run(self):
+                header_string = '{} {} resource_header {} {} {} {}'.format(self.env.PYTHON[0],
+                                                                           self.env.RESCODESCRIPT,
+                                                                           self.outputs[0].abspath(),
+                                                                           self.timestamp,
+                                                                           self.resource_header_path,
+                                                                           self.inputs[0])
+                for entry, set in zip(self.inputs[1:], self.pack_entries):
+                        header_string += ' "%s" '%str(entry.abspath())+' "%s" '%str(set[1])
+                return self.exec_command(header_string)
+
+class manifest(Task.Task):
+        color = 'BLUE'
+        run_str = '${PYTHON} ${MDSCRIPT} manifest ${TGT} ${NUMFILES} ${TIMESTAMP} ${SRC}'
+
+class mergetable(Task.Task):
+        color = 'BLUE'
+
+        def run(self):
+                table_string="{} {} table {}".format(self.env.PYTHON[0],
+                                                     self.env.MDSCRIPT,
+                                                     self.outputs[0].abspath())
+                for entry in self.inputs:
+                        table_string += ' {} '.format(entry.abspath())
+                return self.exec_command(table_string)
 
 class mergedata(Task.Task):
         color = 'BLUE'
@@ -266,10 +322,6 @@ class mergedata(Task.Task):
                         cat_string += ' "{}" '.format(entry.abspath())
                 cat_string += ' > "{}" '.format(self.outputs[0].abspath())
                 return self.exec_command(cat_string)
-
-class genheader(Task.Task):
-        color = 'BLUE'
-        run_str = '${PYTHON} ${RESCODESCRIPT} resource_header ${TGT} ${TIMESTAMP} ${APPINC} ${SRC}'
 
 class copy(Task.Task):
         color = 'BLUE'
