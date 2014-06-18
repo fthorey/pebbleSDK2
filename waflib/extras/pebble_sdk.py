@@ -4,6 +4,7 @@
 
 import json
 import os
+import re
 import sys
 import time
 import waflib.extras.inject_metadata as inject_metadata
@@ -20,11 +21,30 @@ def options(opt):
 	opt.add_option('-d','--debug',action='store_true',default=False,dest='debug',help='Build in debug mode')
 	opt.add_option('-t','--timestamp',dest='timestamp',help="Use a specific timestamp to label this package (ie, your repository's last commit time), defaults to time of build")
 
-	opt.add_option('--pebble-path', action='store', default='',
-                       help = 'Set pebble SDK path', dest='pebblepath')
+	opt.add_option('--pebble-sdk', action='store', default='',
+                       help = 'Set pebble SDK path', dest='pebblesdk')
+
+	opt.add_option('--arm-toolchain-path', action='store', default='',
+                       help = 'Set pebble ARM toolchain path', dest='armpath')
+
 
 def configure(conf):
 	conf.load('python')
+
+        arm_path = []
+        try:
+                path = os.path.abspath("{}{}{}{}{}".format(Options.options.pebblesdk, os.sep, 'arm-cs-tools', os.sep, 'bin'))
+                os.stat(path)
+                arm_path.append(path)
+        except:
+                if Options.options.armpath != '':
+                        try:
+                                path = Options.options.armpath
+                                os.stat(os.path.abspath(path))
+                                arm_path.append(os.path.abspath("{}{}{}".format(path, os.sep, 'bin')))
+                        except:
+                                pass
+        if arm_path is not []: os.environ['PATH'] += os.pathsep + os.pathsep.join(arm_path)
 
 	CROSS_COMPILE_PREFIX='arm-none-eabi-'
 	conf.env.AS=CROSS_COMPILE_PREFIX+'gcc'
@@ -45,12 +65,19 @@ def configure(conf):
 	else:
 		print"Debug enabled"
 
-        if conf.options.pebblepath != '':
-                pebble_sdk=conf.root.find_dir(os.path.abspath(Options.options.pebblepath))
+        if conf.options.pebblesdk != '':
+                pebble_sdk_file = os.path.abspath("{}{}Pebble".format(Options.options.pebblesdk, os.sep))
+                try:
+                        os.stat(pebble_sdk_file)
+                        pebble_sdk = conf.root.find_dir(os.path.abspath(pebble_sdk_file))
+                except:
+                        pebble_sdk=conf.root.find_dir(os.path.dirname(__file__)).parent.parent.parent
         else:
                 pebble_sdk=conf.root.find_dir(os.path.dirname(__file__)).parent.parent.parent
+
 	if pebble_sdk is None:
 		conf.fatal("Unable to find Pebble SDK!\n"+"Please make sure you are running waf directly from your SDK or provide a valid SDK path.")
+
 	sdk_check_nodes=['lib/libpebble.a','pebble_app.ld','tools','include','include/pebble.h']
 	for n in sdk_check_nodes:
 		if pebble_sdk.find_node(n) is None:
