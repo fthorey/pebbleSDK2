@@ -100,8 +100,10 @@ def build(bld):
         sdk_folder = bld.root.find_dir(bld.env['PEBBLE_SDK'])
         tools_path = sdk_folder.find_dir('tools')
 
-        json_node = bld.path.find_node('appinfo.json')
-        with open(json_node.abspath(), 'r') as f:
+        appinfo_json_node = bld.path.find_node('appinfo.json')
+	if appinfo_json_node is None:
+		bld.fatal('Could not find appinfo.json')
+        with open(appinfo_json_node.abspath(), 'r') as f:
                 appinfo = json.load(f)
         resources = appinfo['resources']
 
@@ -162,11 +164,11 @@ def build(bld):
             header_path    = 'pebble.h',
             resource_dep   = ['png_proc', 'png-trans_proc', 'font_proc', 'raw_proc'])
 
-        appinfo_auto_c_node = json_node.change_ext('.auto.c')
+        appinfo_auto_c_node = appinfo_json_node.change_ext('.auto.c')
 
         bld(features       = 'appinfo_auto_c',
             name           = 'gen_appinfo_auto_c',
-            appinfo        = json_node,
+            appinfo        = appinfo_json_node,
             target         = appinfo_auto_c_node)
 
 class resources(Task.Task):
