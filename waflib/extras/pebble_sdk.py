@@ -94,6 +94,81 @@ def configure(conf):
 	print"Found Pebble SDK in\t\t\t : {}".format(pebble_sdk.abspath())
 	conf.env.PEBBLE_SDK=pebble_sdk.abspath()
 
+def build(bld):
+        c_preproc.enable_file_name_c_define()
+
+        sdk_folder = bld.root.find_dir(bld.env['PEBBLE_SDK'])
+        tools_path = sdk_folder.find_dir('tools')
+
+        json_node = bld.path.find_node('appinfo.json')
+        with open(json_node.abspath(), 'r') as f:
+                appinfo = json.load(f)
+        resources = appinfo['resources']
+
+        bld(features     = 'png',
+            name         = 'png_proc',
+            resources    = resources,
+            script       = tools_path.find_node('bitmapgen.py').abspath())
+
+        bld(features     = 'font',
+            name         = 'font_proc',
+            resources    = resources,
+            script       = tools_path.find_node('font/fontgen.py').abspath())
+
+        bld(features     = 'png-trans',
+            name         = 'png-trans_proc',
+            resources    = resources,
+            script       = tools_path.find_node('bitmapgen.py').abspath())
+
+        bld(features     = 'raw',
+            name         = 'raw_proc',
+            resources    = resources)
+
+        output_pack_node = bld.path.find_or_declare('app_resources.pbpack')
+        manifest_node = output_pack_node.change_ext('.pbpack.manifest')
+        table_node = output_pack_node.change_ext('.pbpack.table')
+        data_node = output_pack_node.change_ext('.pbpack.data')
+
+        bld(features      = 'packdata',
+            name          = 'gen_packdata',
+            target        = data_node,
+            resource_dep  = ['png_proc', 'png-trans_proc', 'font_proc', 'raw_proc'])
+
+        bld(features       = 'packtable',
+            name           = 'gen_packtable',
+            target         = table_node,
+            script         = tools_path.find_node('pbpack_meta_data.py').abspath(),
+            resource_dep   = ['png_proc', 'png-trans_proc', 'font_proc', 'raw_proc'])
+
+        bld(features       = 'packmanifest',
+            name           = 'gen_packmanifest',
+            data           = data_node,
+            target         = manifest_node,
+            script         = tools_path.find_node('pbpack_meta_data.py').abspath(),
+            resource_dep   = ['png_proc', 'png-trans_proc', 'font_proc', 'raw_proc'])
+
+        bld(features       = 'pbpack',
+            name           = 'gen_pbpack',
+            packs          = [manifest_node, table_node, data_node],
+            target         = output_pack_node)
+
+        resource_id_header_node = bld.path.find_or_declare('src/resource_ids.auto.h')
+
+        bld(features       = 'ids_auto_h',
+            name           = 'gen_ids_auto_h',
+            data           = data_node,
+            target         = resource_id_header_node,
+            script         = tools_path.find_node('generate_resource_code.py').abspath(),
+            header_path    = 'pebble.h',
+            resource_dep   = ['png_proc', 'png-trans_proc', 'font_proc', 'raw_proc'])
+
+        appinfo_auto_c_node = json_node.change_ext('.auto.c')
+
+        bld(features       = 'appinfo_auto_c',
+            name           = 'gen_appinfo_auto_c',
+            appinfo        = json_node,
+            target         = appinfo_auto_c_node)
+
 class resources(Task.Task):
 	color   = 'BLUE'
 
