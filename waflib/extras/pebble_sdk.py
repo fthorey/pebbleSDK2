@@ -25,7 +25,7 @@ def options(opt):
 	opt.add_option('-d','--debug',action='store_true', default=False,
                        dest='debug', help='Build in debug mode')
 
-	opt.add_option('-t','--timestamp',dest='timestamp', default = 0,
+	opt.add_option('-t','--timestamp',dest='timestamp',
                        help="Use a specific timestamp to label this package \
                        (ie, your repository's last commit time), defaults to time of build")
 
@@ -257,8 +257,8 @@ def init_datapack(self):
         self.mdscript = tools_path.find_node('pbpack_meta_data.py').abspath()
         self.headerscript = tools_path.find_node('generate_resource_code.py').abspath()
 
-        # timestamp = int(time.time())
-        self.timestamp = str(0)
+	if timestamp==None:
+		timestamp=int(time.time())
 
         self.packs = []
 
