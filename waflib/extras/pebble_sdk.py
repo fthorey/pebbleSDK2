@@ -309,7 +309,14 @@ def process_packdata(self):
                 if getattr(y, 'pack_entries', None):
                         entries += y.pack_entries
 
-	pbdata_tsk = self.create_task('genpackdata', [e[0] for e in entries], [target])
+        pbdata_tsk = self.create_task('genpackdata' if entries else 'touch', [e[0] for e in entries], [target])
+
+class touch(Task.Task):
+        color = 'BLUE'
+
+        def run(self):
+		open(self.outputs[0].abspath(), 'a').close()
+
 
 class genpackdata(Task.Task):
         color = 'BLUE'
