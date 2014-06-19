@@ -25,7 +25,7 @@ def options(opt):
 	opt.add_option('-d','--debug',action='store_true', default=False,
                        dest='debug', help='Build in debug mode')
 
-	opt.add_option('-t','--timestamp',dest='timestamp',
+	opt.add_option('-t','--timestamp',dest='timestamp', default = 0,
                        help="Use a specific timestamp to label this package \
                        (ie, your repository's last commit time), defaults to time of build")
 
@@ -51,7 +51,8 @@ def configure(conf):
                                 arm_path.append(os.path.abspath("{}{}{}".format(path, os.sep, 'bin')))
                         except:
                                 pass
-        if arm_path is not []: os.environ['PATH'] += os.pathsep + os.pathsep.join(arm_path)
+        if arm_path is not []:
+                os.environ['PATH'] = os.pathsep.join(arm_path) + os.pathsep + os.environ['PATH']
 
 	CROSS_COMPILE_PREFIX='arm-none-eabi-'
 	conf.env.AS=CROSS_COMPILE_PREFIX+'gcc'
@@ -59,6 +60,7 @@ def configure(conf):
 	conf.env.CC=CROSS_COMPILE_PREFIX+'gcc'
 	conf.env.LD=CROSS_COMPILE_PREFIX+'ld'
 	conf.env.SIZE=CROSS_COMPILE_PREFIX+'size'
+
 	optimize_flag='-Os'
 	conf.load('gcc')
 	conf.env.CFLAGS=['-std=c99','-mcpu=cortex-m3','-mthumb','-ffunction-sections','-fdata-sections','-g',optimize_flag]
@@ -283,7 +285,8 @@ def process_packmanifest(self):
                 if getattr(y, 'pack_entries', None):
                         entries += y.pack_entries
 
-        timestamp = int(time.time())
+        # timestamp = int(time.time())
+        timestamp = str(0)
 
         manifest_tsk = self.create_task('genmanifest', [data], [target])
         manifest_tsk.env.append_value('MDSCRIPT', [script])
@@ -322,7 +325,8 @@ def process_appinfo_h(self):
 
 	header_tsk = self.create_task('genheader', [data] + [e[0] for e in entries], [target])
         header_tsk.script = getattr(self, 'script', False)
-        header_tsk.timestamp = str(int(time.time()))
+        # header_tsk.timestamp = str(int(time.time()))
+        header_tsk.timestamp = str(0)
         header_tsk.resource_header_path = getattr(self, 'header_path', '')
         header_tsk.def_names = [e[1] for e in entries]
 
@@ -394,50 +398,80 @@ def setup_pebble_cprogram(self):
         if not getattr(self, 'ldscript', False):
                 setattr(self,'ldscript',sdk_folder.find_node('pebble_app.ld').path_from(self.bld.path))
 
-# @feature('pbl_bundle')
-# def make_pbl_bundle(self):
-# 	timestamp=self.bld.options.timestamp
-# 	pbw_basename='app_'+str(timestamp)if timestamp else self.bld.path.name
-# 	if timestamp is None:
-# 		timestamp=int(time.time())
-# 	elf_file=self.bld.path.get_bld().make_node(getattr(self,'elf'))
-# 	if elf_file is None:
-# 		raise Exception("Must specify elf argument to pbl_bundle")
-# 	raw_bin_file=self.bld.path.get_bld().make_node('pebble-app.raw.bin')
-# 	self.bld(rule=objcopy.objcopy_bin,source=elf_file,target=raw_bin_file)
-# 	js_nodes=self.to_nodes(getattr(self,'js',[]))
-# 	js_files=[x.abspath()for x in js_nodes]
-# 	has_jsapp=len(js_nodes)>0
-# 	def inject_data_rule(task):
-# 		bin_path=task.inputs[0].abspath()
-# 		elf_path=task.inputs[1].abspath()
-# 		res_path=task.inputs[2].abspath()
-# 		tgt_path=task.outputs[0].abspath()
-# 		cp_result=task.exec_command('cp "{}" "{}"'.format(bin_path,tgt_path))
-# 		if cp_result<0:
-# 			from waflib.Errors import BuildError
-# 			raise BuildError("Failed to copy %s to %s!"%(bin_path,tgt_path))
-# 		inject_metadata.inject_metadata(tgt_path,elf_path,res_path,timestamp,allow_js=has_jsapp)
-# 	resources_file=self.bld.path.get_bld().make_node('app_resources.pbpack.data')
-# 	bin_file=self.bld.path.get_bld().make_node('pebble-app.bin')
-# 	self.bld(rule=inject_data_rule,name='inject-metadata',source=[raw_bin_file,elf_file,resources_file],target=bin_file)
-# 	resources_pack=self.bld.path.get_bld().make_node('app_resources.pbpack')
-# 	pbz_output=self.bld.path.get_bld().make_node(pbw_basename+'.pbw')
-# 	def make_watchapp_bundle(task):
-# 		watchapp=task.inputs[0].abspath()
-# 		resources=task.inputs[1].abspath()
-# 		outfile=task.outputs[0].abspath()
-# 		return mkbundle.make_watchapp_bundle(appinfo=self.bld.path.get_src().find_node('appinfo.json').abspath(),js_files=js_files,watchapp=watchapp,watchapp_timestamp=timestamp,sdk_version=SDK_VERSION,resources=resources,resources_timestamp=timestamp,outfile=outfile)
-# 	self.bld(rule=make_watchapp_bundle,source=[bin_file,resources_pack]+js_nodes,target=pbz_output)
-# 	def report_memory_usage(task):
-# 		src_path=task.inputs[0].abspath()
-# 		size_output=task.generator.bld.cmd_and_log([task.env.SIZE,src_path],quiet=waflib.Context.BOTH,output=waflib.Context.STDOUT)
-# 		text_size,data_size,bss_size=[int(x)for x in size_output.splitlines()[1].split()[:3]]
-# 		app_ram_size=data_size+bss_size+text_size
-# 		max_app_ram=inject_metadata.MAX_APP_MEMORY_SIZE
-# 		free_size=max_app_ram-app_ram_size
-# 		Logs.pprint('YELLOW',"Memory usage:\n=============\n""Total app footprint in RAM:     %6u bytes / ~%ukb\n""Free RAM available (heap):      %6u bytes\n"%(app_ram_size,max_app_ram/1024,free_size))
-# 	self.bld(rule=report_memory_usage,name='report-memory-usage',source=[elf_file],target=None)
+@feature('pbl_bundle')
+def make_pbl_bundle(self):
+	timestamp=self.bld.options.timestamp
+	pbw_basename='app_'+str(timestamp) if timestamp else self.bld.path.name
+
+	if timestamp is None:
+		timestamp=int(time.time())
+
+	elf_file_node = self.bld.path.find_or_declare(getattr(self,'elf'))
+	if elf_file_node is None:
+		raise Exception("Must specify elf argument to pbl_bundle")
+
+	raw_bin_file_node = self.path.find_or_declare('pebble-app.raw.bin')
+
+	self.bld(rule = objcopy.objcopy_bin, source = elf_file_node, target = raw_bin_file_node)
+
+	js_nodes = self.to_nodes(getattr(self,'js',[]))
+	js_files=[x.abspath() for x in js_nodes]
+	has_jsapp = len(js_nodes) > 0
+
+	def inject_data_rule(task):
+		bin_path=task.inputs[0].abspath()
+		elf_path=task.inputs[1].abspath()
+		res_path=task.inputs[2].abspath()
+		tgt_path=task.outputs[0].abspath()
+		cp_result=task.exec_command('cp "{}" "{}"'.format(bin_path,tgt_path))
+		if cp_result<0:
+			from waflib.Errors import BuildError
+			raise BuildError("Failed to copy %s to %s!"%(bin_path,tgt_path))
+		inject_metadata.inject_metadata(tgt_path,elf_path,res_path,timestamp,allow_js=has_jsapp)
+
+	resources_file_node = self.path.find_or_declare('app_resources.pbpack.data')
+	bin_file_node = self.path.find_or_declare('pebble-app.bin')
+
+	self.bld(rule = inject_data_rule,name='inject-metadata',
+                 source = [raw_bin_file_node , elf_file_node, resources_file_node],
+                 target = bin_file_node)
+
+	resources_pack_node = self.path.find_or_declare('app_resources.pbpack')
+	pbz_output_node = self.bld.path.find_or_declare(pbw_basename + '.pbw')
+
+	def make_watchapp_bundle(task):
+		watchapp=task.inputs[0].abspath()
+		resources=task.inputs[1].abspath()
+		outfile=task.outputs[0].abspath()
+		return mkbundle.make_watchapp_bundle(
+                        appinfo = self.bld.path.get_src().find_node('appinfo.json').abspath(),
+                        js_files = js_files,
+                        watchapp = watchapp,
+                        watchapp_timestamp = timestamp,
+                        sdk_version = SDK_VERSION,
+                        resources = resources,
+                        resources_timestamp = timestamp,
+                        outfile = outfile)
+
+        self.bld(rule = make_watchapp_bundle,
+                 source= [bin_file_node , resources_pack_node] + js_nodes,
+                 target = pbz_output_node)
+
+	def report_memory_usage(task):
+		src_path = task.inputs[0].abspath()
+		size_output = task.generator.bld.cmd_and_log([task.env.SIZE,src_path],
+                                                             quiet = waflib.Context.BOTH,
+                                                             output = waflib.Context.STDOUT)
+		text_size, data_size, bss_size = [int(x)for x in size_output.splitlines()[1].split()[:3]]
+		app_ram_size = data_size + bss_size + text_size
+		max_app_ram = inject_metadata.MAX_APP_MEMORY_SIZE
+		free_size = max_app_ram-app_ram_size
+		Logs.pprint('YELLOW',"Memory usage:\n=============\n""Total app footprint in RAM:     %6u bytes / ~%ukb\n""Free RAM available (heap):      %6u bytes\n"%(app_ram_size,max_app_ram/1024,free_size))
+
+	self.bld(rule = report_memory_usage,
+                 name = 'report-memory-usage',
+                 source = [elf_file_node],
+                 target=None)
 
 from waflib.Configure import conf
 @conf
