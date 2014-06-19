@@ -257,8 +257,9 @@ def init_datapack(self):
         self.mdscript = tools_path.find_node('pbpack_meta_data.py').abspath()
         self.headerscript = tools_path.find_node('generate_resource_code.py').abspath()
 
-	if timestamp==None:
-		timestamp=int(time.time())
+	self.timestamp = self.bld.options.timestamp
+	if self.timestamp == None:
+		self.timestamp=int(time.time())
 
         self.packs = []
 
