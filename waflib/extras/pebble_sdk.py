@@ -15,9 +15,11 @@ import waflib.extras.objcopy as objcopy
 import waflib.extras.c_preproc as c_preproc
 import waflib.extras.xcode_pebble
 from waflib import Logs, Options
+from waflib import Task, Utils
 from waflib.Task import TaskBase, SKIP_ME, ASK_LATER
 from waflib.TaskGen import before_method,feature, after_method
 SDK_VERSION={'major':5,'minor':0}
+
 def options(opt):
 	opt.load('gcc')
 	opt.add_option('-d','--debug',action='store_true', default=False,
@@ -90,251 +92,149 @@ def configure(conf):
 	print"Found Pebble SDK in\t\t\t : {}".format(pebble_sdk.abspath())
 	conf.env.PEBBLE_SDK=pebble_sdk.abspath()
 
-@feature('pbpack')
-def init_pbpack(self):
-        self.appinfo_json_node = getattr(self, 'jsonfile', False)
+class resources(Task.Task):
+	color   = 'BLUE'
 
-@feature('pbpack')
-@after_method('init_pbpack')
-@before_method('process_source')
-def gen_files(self):
-        # Generate c file
-        coutnode = self.appinfo_json_node.change_ext('.auto.c')
-        c_tsk = self.create_task('appinfoc', [self.appinfo_json_node], [coutnode])
+	def signature(self):
+		""" override signature method and add dictionary to hash """
+		try: return self.cache_sig
+		except AttributeError: pass
 
-        # # Add c file back to source for future processing
-        # if not self.source: self.source = []
-        # self.source.append(coutnode)
+		self.m = Utils.md5()
+		self.m.update(self.hcode.encode())
 
-        # Get some tools
-	sdk_folder=self.bld.root.find_dir(self.bld.env['PEBBLE_SDK'])
-        tools_path=sdk_folder.find_dir('tools')
+		# explicit deps
+		self.sig_explicit_deps()
 
-        # Generate datapack
-        pack_tsk = self.create_task('gendatapack', [self.appinfo_json_node])
-        # Set some resources
-        pack_tsk.resources_path_node = self.bld.srcnode.find_node('resources')
-        pack_tsk.resource_id_header_node = self.path.find_or_declare('src/resource_ids.auto.h')
-        pack_tsk.output_pack_node = self.path.find_or_declare('app_resources.pbpack')
+		# env vars
+		self.sig_vars()
 
-        # Set some env
-        self.env.BITMAPSCRIPT = tools_path.find_node('bitmapgen.py').abspath()
-        self.env.FONTSCRIPT = tools_path.find_node('font/fontgen.py').abspath()
-	self.env.MDSCRIPT = tools_path.find_node('pbpack_meta_data.py').abspath()
-	self.env.RESCODESCRIPT = tools_path.find_node('generate_resource_code.py').abspath()
+		#dict
+		self.m.update( repr(sorted(self.resources.items())) )
 
-from waflib import Task
-class gendatapack(Task.Task):
-        color   = 'PINK'
-        quiet   = True
-        ext_out = ['.h']
+		# implicit deps / scanner results
+		if self.scan:
+			try:
+				self.sig_implicit_deps()
+			except Errors.TaskRescan:
+				return self.signature()
 
-        def scan(self):
-                found_lst = []
+		ret = self.cache_sig = self.m.digest()
+		return ret
 
-                with open(self.inputs[0].abspath(),'r')as f:
-                        appinfo = json.load(f)
-		resources_dict=appinfo['resources']
-
-                # Process appinfo
-                for res in resources_dict['media']:
+class AppInfoResources(object):
+        @staticmethod
+        def process(bld, resources, ext):
+                lst = []
+                resources_node = bld.bld.srcnode.find_node('resources')
+                for res in resources['media']:
+                        def_name = res["name"]
                         res_type=res["type"]
                         input_file=str(res["file"])
-                        input_node=self.resources_path_node.find_node(input_file)
-                        if input_node is None:
-                                self.generator.bld.fatal("Could not find {} resource <{}>"
-                                                         .format(res_type,input_file))
-
-                        if res_type in ['raw', 'png', 'png-trans', 'font']:
-                                found_lst.append(input_node)
-                        else:
-                                waflib.Logs.error("Error Generating Resources: File: " + \
-                                                  input_file+" has specified invalid type: " + res_type)
-                                waflib.Logs.error("Must be one of (raw, png, png-trans, font)")
-                                raise waflib.Errors.WafError("Generating resources failed")
-
-                return (found_lst, [])
-
-        def run(self):
-                self.more_tasks = []
-
-                pack_entries = []
-                res_tasks = []
-                pbpack_tasks = []
-
-                with open(self.inputs[0].abspath(),'r')as f:
-                        appinfo = json.load(f)
-		resources_dict=appinfo['resources']
-
-                # Process appinfo
-                for res in resources_dict['media']:
-
-                        res_type = res["type"]
-                        def_name = res["name"]
-                        input_file = str(res["file"])
-                        input_node = self.resources_path_node.find_node(input_file)
-
-                        # Process .raw files -> .raw
-                        if res_type == 'raw':
-                                pack_entries.append((input_node, def_name))
-                                # -> No prcess needed
-
-                        # Process png files -> .png.pbi
-                        elif res_type == 'png':
-                                output_node = input_node.change_ext('.png.pbi')
-                                pack_entries.append((output_node, def_name))
-                                pbi_tsk = self.generator.create_task('procpng',
-                                                                     [input_node],
-                                                                     [output_node])
-                                res_tasks.append(pbi_tsk)
-                                self.more_tasks.append(pbi_tsk)
-
-                        # Process png-trans files -> .png.white.pbi / .png.black.pbi
-                        elif res_type == "png-trans":
-                                for color in ['white', 'black']:
-                                        output_node = input_node.change_ext(".png.{}.pbi".format(color))
-                                        pack_entries.append((output_node,"{}_{}".format(def_name, color.upper())))
-                                        pbi_tsk = self.generator.create_task('procpng',
-                                                                             [input_node],
-                                                                             [output_node])
-                                        res_tasks.append(pbi_tsk)
-                                        self.more_tasks.append(pbi_tsk)
-
-                        # Process font files -> .def_name.pfo
-                        elif res_type == "font":
-                                output_node = input_node.change_ext('.' + str(def_name) + '.pfo')
-                                pack_entries.append((output_node, def_name))
-                                font_tsk = self.generator.create_task('procfont',
-                                                                      [input_node],
-                                                                      [output_node])
-                                res_tasks.append(font_tsk)
-
-                                m = re.search('([0-9]+)', def_name)
-                                if m == None:
-                                        if def_name != 'FONT_FALLBACK':
-                                                raise ValueError('Font {0}: no height found in def name''\n'
-                                                                 .format(self.def_name))
-                                        height = 14
+                        if res_type == ext:
+                                input_node = resources_node.find_node(input_file)
+                                if input_node is None:
+                                        bld.fatal("Could not find {} resource <{}>"
+                                                  .format(res_type,input_file))
                                 else:
-                                        height = int(m.group(0))
+                                        lst.append((input_node, def_name))
+                return lst
 
-                                if 'trackingAdjust' in res:
-                                        trackingAdjustArg = '--tracking %i' % res['trackingAdjust']
-                                else:
-                                        trackingAdjustArg = ''
+@feature('png')
+def process_png(self):
+        self.pack_entries = []
 
-                                if 'characterRegex' in res:
-                                        characterRegexArg = '--filter "%s"' % (res['characterRegex']
-                                                                               .encode('utf8'))
-                                else:
-                                        characterRegexArg=''
+        resources = getattr(self, 'resources', False)
+        script = getattr(self, 'script', False)
 
-                                font_tsk.env.append_value('FONTHEIGHT', [str(height)])
-                                font_tsk.env.append_value('TRACKINGARG', [trackingAdjustArg])
-                                font_tsk.env.append_value('REGEXPARG', [characterRegexArg])
-                                self.more_tasks.append(font_tsk)
+        png_nodes  = AppInfoResources.process(self, resources, 'png')
+        for input_node, def_name in png_nodes:
+                output_node = input_node.change_ext('.png.pbi')
+                self.pack_entries.append((output_node, def_name))
+                pbi_tsk = self.create_task('genpbi',
+                                           [input_node],
+                                           [output_node])
+                pbi_tsk.resources = resources
+                pbi_tsk.env.append_value('BITMAPSCRIPT', [script])
 
-                        # File extension not handled
-                        else:
-                                raise waflib.Errors.WafError("Generating resources failed")
+@feature('png-trans')
+def process_png_trans(self):
+        self.pack_entries = []
 
-                manifest_node = self.output_pack_node.change_ext('.pbpack.manifest')
-                table_node = self.output_pack_node.change_ext('.pbpack.table')
-                data_node = self.output_pack_node.change_ext('.pbpack.data')
+        resources = getattr(self, 'resources', False)
+        script = getattr(self, 'script', False)
 
-                # Generate .pbpack.data
-                pbdata_tsk = self.generator.create_task('mergedata',
-                                                        [entry[0] for entry in pack_entries],
-                                                        [data_node])
-                pbpack_tasks.append(pbdata_tsk)
-                for tsk in res_tasks: pbdata_tsk.set_run_after(tsk)
-                self.more_tasks.append(pbdata_tsk)
+        png_nodes  = AppInfoResources.process(self, resources, 'png-trans')
+        for input_node, def_name in png_nodes:
+                for color in ['white', 'black']:
+                        output_node = input_node.change_ext(".png.{}.pbi".format(color))
+                        self.pack_entries.append((output_node,"{}_{}".format(def_name, color.upper())))
+                        pbi_tsk = self.create_task('genpbi',
+                                                   [input_node],
+                                                   [output_node])
+                        pbi_tsk.resources = resources
+                        pbi_tsk.env.append_value('BITMAPSCRIPT', [script])
 
-                # Generate .pbpack.table
-                pbtable_tsk = self.generator.create_task('mergetable',
-                                                        [entry[0] for entry in pack_entries],
-                                                        [table_node])
-                for tsk in res_tasks: pbtable_tsk.set_run_after(tsk)
-                self.more_tasks.append(pbtable_tsk)
-
-                timestamp = int(time.time())
-
-                # Generate .pbpack.manifest
-                manifest_tsk = self.generator.create_task('manifest',
-                                                          [data_node],
-                                                          [manifest_node])
-                manifest_tsk.env.append_value('NUMFILES', [str(len(pack_entries))])
-                manifest_tsk.env.append_value('TIMESTAMP', [str(timestamp)])
-                manifest_tsk.set_run_after(pbdata_tsk)
-                pbpack_tasks.append(manifest_tsk)
-                self.more_tasks.append(manifest_tsk)
-
-                # Generate header
-                header_tsk = self.generator.create_task('genheader',
-                                                        [data_node] + \
-                                                        [entry[0] for entry in pack_entries],
-                                                        [self.resource_id_header_node])
-                header_tsk.resource_header_path = 'pebble.h'
-                header_tsk.version_def_name = '--version_def_name=SYSTEM_RESOURCE_VERSION'
-                header_tsk.pack_entries = pack_entries
-                header_tsk.timestamp = str(timestamp)
-                for tsk in res_tasks: pbtable_tsk.set_run_after(tsk)
-                header_tsk.set_run_after(pbdata_tsk)
-                pbpack_tasks.append(header_tsk)
-                self.more_tasks.append(header_tsk)
-
-                try:
-                        self.generator.pbpack_tasks.append(header_tsk)
-                except AttributeError:
-                        self.generator.pbpack_tasks = [header_tsk]
-
-                # Last but not least, generate pbpack
-                pbpack_tsk = self.generator.create_task('pbpack',
-                                                        [manifest_node, table_node, data_node],
-                                                        [self.output_pack_node])
-                for tsk in pbpack_tasks: pbpack_tsk.set_run_after(tsk)
-                self.more_tasks.append(pbpack_tsk)
-
-class pbpack(Task.Task):
+class genpbi(resources):
         color = 'BLUE'
-        def run(self):
-                pbpack_string = 'cat {} {} {} > {}'.format(self.inputs[0],
-                                                           self.inputs[1],
-                                                           self.inputs[2],
-                                                           self.outputs[0])
-                return self.exec_command(pbpack_string)
+        run_str = '${PYTHON} ${BITMAPSCRIPT} pbi ${SRC} ${TGT}'
 
-class genheader(Task.Task):
+@feature('font')
+def process_font(self):
+        self.pack_entries = []
+
+        resources = getattr(self, 'resources', False)
+        script = getattr(self, 'script', False)
+
+        font_nodes = AppInfoResources.process(self, resources, 'font')
+        for input_node, def_name in font_nodes:
+                output_node = input_node.change_ext('.' + str(def_name) + '.pfo')
+                self.pack_entries.append((output_node, def_name))
+                font_tsk = self.create_task('genpfo',
+                                            [input_node],
+                                            [output_node])
+                m = re.search('([0-9]+)', def_name)
+                if m == None:
+                        if def_name != 'FONT_FALLBACK':
+                                raise ValueError('Font {0}: no height found in def name''\n'
+                                                 .format(self.def_name))
+                                height = 14
+                else:
+                        height = int(m.group(0))
+
+                font_tsk.resources = resources
+                font_tsk.env.append_value('FONTSCRIPT', [script])
+                font_tsk.env.append_value('FONTHEIGHT', [str(height)])
+
+class genpfo(resources):
         color = 'BLUE'
-        ext_out = ['.h']
+        run_str = '${PYTHON} ${FONTSCRIPT} pfo ${FONTHEIGHT} ${SRC} ${TGT}'
 
-        def run(self):
-                header_string = '{} {} resource_header {} {} {} {}'.format(self.env.PYTHON[0],
-                                                                           self.env.RESCODESCRIPT,
-                                                                           self.outputs[0].abspath(),
-                                                                           self.timestamp,
-                                                                           self.resource_header_path,
-                                                                           self.inputs[0])
-                for entry, set in zip(self.inputs[1:], self.pack_entries):
-                        header_string += ' "%s" '%str(entry.abspath())+' "%s" '%str(set[1])
-                return self.exec_command(header_string)
+@feature('raw')
+def process_raw(self):
+        self.pack_entries = []
 
-class manifest(Task.Task):
-        color = 'BLUE'
-        run_str = '${PYTHON} ${MDSCRIPT} manifest ${TGT} ${NUMFILES} ${TIMESTAMP} ${SRC}'
+        resources = getattr(self, 'resources', False)
 
-class mergetable(Task.Task):
-        color = 'BLUE'
+        raw_nodes = AppInfoResources.process(self, resources, 'raw')
+        for input_node, def_name in raw_nodes:
+                self.pack_entries.append((input_node, def_name))
 
-        def run(self):
-                table_string="{} {} table {}".format(self.env.PYTHON[0],
-                                                     self.env.MDSCRIPT,
-                                                     self.outputs[0].abspath())
-                for entry in self.inputs:
-                        table_string += ' {} '.format(entry.abspath())
-                return self.exec_command(table_string)
+@feature('packdata')
+def process_packdata(self):
+        target = getattr(self, 'target', False)
 
-class mergedata(Task.Task):
+        entries = []
+
+        for x in self.to_list(getattr(self, 'resource_dep', [])):
+                y = self.bld.get_tgen_by_name(x)
+                y.post()
+                if getattr(y, 'pack_entries', None):
+                        entries += y.pack_entries
+
+	pbdata_tsk = self.create_task('genpackdata', [e[0] for e in entries], [target])
+
+class genpackdata(Task.Task):
         color = 'BLUE'
 
         def run(self):
@@ -344,19 +244,112 @@ class mergedata(Task.Task):
                 cat_string += ' > "{}" '.format(self.outputs[0].abspath())
                 return self.exec_command(cat_string)
 
-class copy(Task.Task):
-        color = 'BLUE'
-        run_str = 'cp ${SRC} ${TGT}'
+@feature('packtable')
+def process_packtable(self):
+        target = getattr(self, 'target', False)
 
-class procfont(Task.Task):
-        color = 'BLUE'
-        run_str = '${PYTHON} ${FONTSCRIPT} pfo ${FONTHEIGHT} ${TRACKINGARG} ${REGEXPARG} ${SRC} ${TGT}'
+        entries = []
 
-class procpng(Task.Task):
-        color = 'BLUE'
-        run_str = '${PYTHON} ${BITMAPSCRIPT} pbi ${SRC} ${TGT}'
+        for x in self.to_list(getattr(self, 'resource_dep', [])):
+                y = self.bld.get_tgen_by_name(x)
+                y.post()
+                if getattr(y, 'pack_entries', None):
+                        entries += y.pack_entries
 
-class appinfoc(Task.Task):
+	pbtable_tsk = self.create_task('genpacktable', [e[0] for e in entries], [target])
+        pbtable_tsk.mdscript = getattr(self, 'script', False)
+
+class genpacktable(Task.Task):
+        color = 'BLUE'
+
+        def run(self):
+                table_string="{} {} table {}".format(self.env.PYTHON[0],
+                                                     self.mdscript,
+                                                     self.outputs[0].abspath())
+                for entry in self.inputs:
+                        table_string += ' {} '.format(entry.abspath())
+                return self.exec_command(table_string)
+
+@feature('packmanifest')
+def process_packmanifest(self):
+        target = getattr(self, 'target', False)
+        script = getattr(self, 'script', False)
+        data = getattr(self, 'data', False)
+
+        entries = []
+        for x in self.to_list(getattr(self, 'resource_dep', [])):
+                y = self.bld.get_tgen_by_name(x)
+                y.post()
+                if getattr(y, 'pack_entries', None):
+                        entries += y.pack_entries
+
+        timestamp = int(time.time())
+
+        manifest_tsk = self.create_task('genmanifest', [data], [target])
+        manifest_tsk.env.append_value('MDSCRIPT', [script])
+        manifest_tsk.env.append_value('NUMFILES', [str(len(entries))])
+        manifest_tsk.env.append_value('TIMESTAMP', [str(timestamp)])
+
+class genmanifest(Task.Task):
+        color = 'BLUE'
+        run_str = '${PYTHON} ${MDSCRIPT} manifest ${TGT} ${NUMFILES} ${TIMESTAMP} ${SRC}'
+
+@feature('pbpack')
+def process_pbpack(self):
+        target = getattr(self, 'target', False)
+        packs = getattr(self, 'packs', False)
+        pbpack_tsk = self.create_task('genpbpack', packs, [target])
+
+class genpbpack(Task.Task):
+        color = 'BLUE'
+        def run(self):
+                pbpack_string = 'cat {} {} {} > {}'.format(self.inputs[0], self.inputs[1],
+                                                           self.inputs[2], self.outputs[0])
+                return self.exec_command(pbpack_string)
+
+@feature('ids_auto_h')
+def process_appinfo_h(self):
+        target = getattr(self, 'target', False)
+        data = getattr(self, 'data', False)
+
+        entries = []
+
+        for x in self.to_list(getattr(self, 'resource_dep', [])):
+                y = self.bld.get_tgen_by_name(x)
+                y.post()
+                if getattr(y, 'pack_entries', None):
+                        entries += y.pack_entries
+
+	header_tsk = self.create_task('genheader', [data] + [e[0] for e in entries], [target])
+        header_tsk.script = getattr(self, 'script', False)
+        header_tsk.timestamp = str(int(time.time()))
+        header_tsk.resource_header_path = getattr(self, 'header_path', '')
+        header_tsk.def_names = [e[1] for e in entries]
+
+class genheader(Task.Task):
+        color = 'BLUE'
+        ext_out = ['.h']
+
+        def run(self):
+                header_string = '{} {} resource_header {} {} {} {}'.format(self.env.PYTHON[0],
+                                                                           self.script,
+                                                                           self.outputs[0].abspath(),
+                                                                           self.timestamp,
+                                                                           self.resource_header_path,
+                                                                           self.inputs[0])
+                for entry, name in zip(self.inputs[1:], self.def_names):
+                        header_string += ' "%s" '%str(entry.abspath())+' "%s" '%str(name)
+                return self.exec_command(header_string)
+
+@feature('appinfo_auto_c')
+@before_method('process_source')
+def process_appinfo_c(self):
+        appinfo = getattr(self, 'appinfo', None)
+        self.target = getattr(self, 'target', None)
+
+        genautoc_tsk = self.create_task('genautoc', [appinfo], [self.target])
+
+class genautoc(Task.Task):
 	color   = 'GREEN'
 
         def run(self):
@@ -364,22 +357,15 @@ class appinfoc(Task.Task):
                 generate_appinfo.generate_appinfo(self.inputs[0].abspath(),
                                                   self.outputs[0].abspath())
 
-def runnable_status(self):
-        for g in self.generator.bld.groups:
-                for tg in g:
-                        if isinstance(tg, TaskBase):
-                                continue
+@feature('c')
+@before_method('process_source')
+def retrieve_appinfo_c(self):
 
-                        for tsk in getattr(tg, 'pbpack_tasks', []):
-                                try:
-                                        os.stat(tsk.outputs[0].abspath())
-                                except:
-                                        return Task.ASK_LATER
-
-        return Task.Task.runnable_status(self)
-
-from waflib.Tools.c import c
-c.runnable_status = runnable_status
+        for x in self.to_list('gen_appinfo_auto_c'):
+                y = self.bld.get_tgen_by_name(x)
+                y.post()
+                if getattr(y, 'target', None):
+                        self.source.append(y.target)
 
 def append_to_attr(self,attr,new_values):
 	values=self.to_list(getattr(self,attr,[]))
