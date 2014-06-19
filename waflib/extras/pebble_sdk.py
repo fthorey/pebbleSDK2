@@ -138,28 +138,6 @@ class resources(Task.Task):
 		ret = self.cache_sig = self.m.digest()
 		return ret
 
-def process(tg):
-        lst_raw, lst_png, lst_png_trans, lst_font = [], [], [], []
-        resources_node = tg.bld.srcnode.find_node('resources')
-        for res in tg.resources['media']:
-                def_name = res["name"]
-                res_type=res["type"]
-                input_file=str(res["file"])
-                input_node = resources_node.find_node(input_file)
-                if input_node is None:
-                        tg.fatal("Could not find {} resource <{}>"
-                                 .format(res_type,input_file))
-                else:
-                        if res_type == 'raw':
-                                lst_raw.append((input_node, def_name))
-                        elif res_type == 'png':
-                                lst_png.append((input_node, def_name))
-                        elif res_type == 'png-trans':
-                                lst_png_trans.append((input_node, def_name))
-                        elif res_type == 'font':
-                                lst_font.append((input_node, def_name))
-        return lst_raw, lst_png, lst_png_trans, lst_font
-
 @feature('appinfo_res')
 def init_appinfo_res(self):
         self.pack_entries = []
@@ -175,7 +153,49 @@ def init_appinfo_res(self):
         self.bitmapscript = tools_path.find_node('bitmapgen.py').abspath()
         self.fontscript = tools_path.find_node('font/fontgen.py').abspath()
 
-        self.raw_nodes, self.png_nodes, self.png_trans_nodes, self.font_nodes = process(self)
+        self.raw_nodes, self.png_nodes, self.png_trans_nodes, self.font_nodes = [], [], [], []
+        self.fonts = {}
+        resources_node = self.bld.srcnode.find_node('resources')
+        for res in self.resources['media']:
+                def_name = res["name"]
+                res_type=res["type"]
+                input_file=str(res["file"])
+                input_node = resources_node.find_node(input_file)
+                if input_node is None:
+                        tg.fatal("Could not find {} resource <{}>"
+                                 .format(res_type,input_file))
+                else:
+                        if res_type == 'raw':
+                                self.raw_nodes.append((input_node, def_name))
+                        elif res_type == 'png':
+                                self.png_nodes.append((input_node, def_name))
+                        elif res_type == 'png-trans':
+                                self.png_trans_nodes.append((input_node, def_name))
+                        elif res_type == 'font':
+                                self.font_nodes.append((input_node, def_name))
+                                self.fonts[def_name] = {}
+                                m = re.search('([0-9]+)', def_name)
+                                if m == None:
+                                        if def_name!='FONT_FALLBACK':
+                                                raise ValueError('Font {0}: no height found in def name''\n'.format(self.def_name))
+                                        height = 14
+                                else:
+                                        height = int(m.group(0))
+                                self.fonts[def_name]['height'] = height
+
+                                if'trackingAdjust'in res:
+                                        trackingAdjustArg = '--tracking %i' % \
+                                                            res['trackingAdjust']
+                                else:
+                                        trackingAdjustArg = ''
+                                self.fonts[def_name]['tracking'] = trackingAdjustArg
+
+                                if'characterRegex'in res:
+                                        characterRegexArg = '--filter "%s"' % \
+                                                            (res['characterRegex'].encode('utf8'))
+                                else:
+                                        characterRegexArg = ''
+                                self.fonts[def_name]['regex'] = characterRegexArg
 
 @feature('appinfo_res')
 @after_method('init_appinfo_res')
@@ -215,22 +235,15 @@ def process_font(self):
                 font_tsk = self.create_task('genpfo',
                                             [input_node],
                                             [output_node])
-                m = re.search('([0-9]+)', def_name)
-                if m == None:
-                        if def_name != 'FONT_FALLBACK':
-                                raise ValueError('Font {0}: no height found in def name''\n'
-                                                 .format(self.def_name))
-                                height = 14
-                else:
-                        height = int(m.group(0))
-
                 font_tsk.resources = self.resources
                 font_tsk.env.append_value('FONTSCRIPT', [self.fontscript])
-                font_tsk.env.append_value('FONTHEIGHT', [str(height)])
+                font_tsk.env.append_value('FONTHEIGHT', [str(self.fonts[def_name]['height'])])
+                font_tsk.env.append_value('TRACKARG', [self.fonts[def_name]['tracking']])
+                font_tsk.env.append_value('REGEX', [self.fonts[def_name]['regex']])
 
 class genpfo(resources):
         color = 'BLUE'
-        run_str = '${PYTHON} ${FONTSCRIPT} pfo ${FONTHEIGHT} ${SRC} ${TGT}'
+        run_str = '${PYTHON} ${FONTSCRIPT} pfo ${FONTHEIGHT} ${TRACKARG} ${REGEX} ${SRC} ${TGT}'
 
 @feature('appinfo_res')
 @after_method('process_font')
