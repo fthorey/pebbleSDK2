@@ -376,24 +376,14 @@ class genheader(Task.Task):
 def process_appinfo_c(self):
         appinfo_json_node = getattr(self, 'appinfo', None)
         self.appinfo_c_node = appinfo_json_node.change_ext('.auto.c')
-        genautoc_tsk = self.create_task('genautoc', [appinfo_json_node], [self.appinfo_c_node])
+        genautoc_tsk = self.create_task('appinfo_c', [appinfo_json_node], [self.appinfo_c_node])
 
-class genautoc(Task.Task):
+class appinfo_c(Task.Task):
 	color   = 'GREEN'
-
         def run(self):
                 import waflib.extras.generate_appinfo as generate_appinfo
                 generate_appinfo.generate_appinfo(self.inputs[0].abspath(),
                                                   self.outputs[0].abspath())
-
-@feature('c')
-@before_method('process_source')
-def retrieve_appinfo_c(self):
-        for x in self.to_list('gen_appinfo_auto_c'):
-                y = self.bld.get_tgen_by_name(x)
-                y.post()
-                if getattr(y, 'appinfo_c_node', None):
-                        self.source.append(y.appinfo_c_node)
 
 def append_to_attr(self,attr,new_values):
 	values=self.to_list(getattr(self,attr,[]))
@@ -416,6 +406,7 @@ def setup_cprogram(self):
 @before_method('process_source')
 def setup_pebble_cprogram(self):
 	sdk_folder=self.bld.root.find_dir(self.bld.env['PEBBLE_SDK'])
+	append_to_attr(self,'source',[self.path.find_or_declare('appinfo.auto.c')])
 	append_to_attr(self,'stlibpath',[sdk_folder.find_dir('lib').abspath()])
 	append_to_attr(self,'stlib',['pebble'])
 	append_to_attr(self,'linkflags',['-Wl,-Map,pebble-app.map,--emit-relocs'])
