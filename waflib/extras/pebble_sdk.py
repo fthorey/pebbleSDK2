@@ -375,7 +375,6 @@ class genautoc(Task.Task):
 @feature('c')
 @before_method('process_source')
 def retrieve_appinfo_c(self):
-
         for x in self.to_list('gen_appinfo_auto_c'):
                 y = self.bld.get_tgen_by_name(x)
                 y.post()
