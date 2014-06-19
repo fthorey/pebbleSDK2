@@ -100,62 +100,19 @@ def build(bld):
         appinfo_json_node = bld.path.find_node('appinfo.json')
 	if appinfo_json_node is None:
 		bld.fatal('Could not find appinfo.json')
-        with open(appinfo_json_node.abspath(), 'r') as f:
-                appinfo = json.load(f)
-        resources = appinfo['resources']
 
         bld(features       = 'appinfo_res',
             name           = 'gen_appinfo_res',
-            resources      = resources,
-        )
+            appinfo        = appinfo_json_node)
 
-	sdk_folder = bld.root.find_dir(bld.env['PEBBLE_SDK'])
-        tools_path = sdk_folder.find_dir('tools')
-
-        output_pack_node = bld.path.find_or_declare('app_resources.pbpack')
-        manifest_node = output_pack_node.change_ext('.pbpack.manifest')
-        table_node = output_pack_node.change_ext('.pbpack.table')
-        data_node = output_pack_node.change_ext('.pbpack.data')
-
-        bld(features      = 'packdata',
-            name          = 'gen_packdata',
-            target        = data_node,
+        bld(features      = 'datapack',
+            name          = 'gen_datapack',
+            header_path    = 'pebble.h',
             resource_dep  = ['gen_appinfo_res'])
 
-        bld(features       = 'packtable',
-            name           = 'gen_packtable',
-            target         = table_node,
-            script         = tools_path.find_node('pbpack_meta_data.py').abspath(),
-            resource_dep   = ['gen_appinfo_res'])
-
-        bld(features       = 'packmanifest',
-            name           = 'gen_packmanifest',
-            data           = data_node,
-            target         = manifest_node,
-            script         = tools_path.find_node('pbpack_meta_data.py').abspath(),
-            resource_dep   = ['gen_appinfo_res'])
-
-        bld(features       = 'pbpack',
-            name           = 'gen_pbpack',
-            packs          = [manifest_node, table_node, data_node],
-            target         = output_pack_node)
-
-        # resource_id_header_node = bld.path.find_or_declare('src/resource_ids.auto.h')
-
-        # bld(features       = 'ids_auto_h',
-        #     name           = 'gen_ids_auto_h',
-        #     data           = data_node,
-        #     target         = resource_id_header_node,
-        #     script         = tools_path.find_node('generate_resource_code.py').abspath(),
-        #     header_path    = 'pebble.h',
-        #     resource_dep   = ['png_proc', 'png-trans_proc', 'font_proc', 'raw_proc'])
-
-        # appinfo_auto_c_node = appinfo_json_node.change_ext('.auto.c')
-
-        # bld(features       = 'appinfo_auto_c',
-        #     name           = 'gen_appinfo_auto_c',
-        #     appinfo        = appinfo_json_node,
-        #     target         = appinfo_auto_c_node)
+        bld(features       = 'appinfo_auto_c',
+            name           = 'gen_appinfo_auto_c',
+            appinfo        = appinfo_json_node)
 
 class resources(Task.Task):
 	color   = 'BLUE'
@@ -164,26 +121,20 @@ class resources(Task.Task):
 		""" override signature method and add dictionary to hash """
 		try: return self.cache_sig
 		except AttributeError: pass
-
 		self.m = Utils.md5()
 		self.m.update(self.hcode.encode())
-
 		# explicit deps
 		self.sig_explicit_deps()
-
 		# env vars
 		self.sig_vars()
-
 		#dict
 		self.m.update( repr(sorted(self.resources.items())) )
-
 		# implicit deps / scanner results
 		if self.scan:
 			try:
 				self.sig_implicit_deps()
 			except Errors.TaskRescan:
 				return self.signature()
-
 		ret = self.cache_sig = self.m.digest()
 		return ret
 
@@ -212,7 +163,11 @@ def process(tg):
 @feature('appinfo_res')
 def init_appinfo_res(self):
         self.pack_entries = []
-        self.resources = getattr(self, 'resources', False)
+
+        appinfo_json_node = getattr(self, 'appinfo', None)
+        with open(appinfo_json_node.abspath(), 'r') as f:
+                appinfo = json.load(f)
+        self.resources = appinfo['resources']
 
 	sdk_folder = self.bld.root.find_dir(self.bld.env['PEBBLE_SDK'])
         tools_path = sdk_folder.find_dir('tools')
@@ -283,26 +238,41 @@ def process_raw(self):
         for input_node, def_name in self.raw_nodes:
                 self.pack_entries.append((input_node, def_name))
 
-@feature('packdata')
-def process_packdata(self):
-        target = getattr(self, 'target', False)
-
+@feature('datapack')
+def init_datapack(self):
         entries = []
-
         for x in self.to_list(getattr(self, 'resource_dep', [])):
                 y = self.bld.get_tgen_by_name(x)
                 y.post()
                 if getattr(y, 'pack_entries', None):
                         entries += y.pack_entries
 
-        pbdata_tsk = self.create_task('genpackdata' if entries else 'touch', [e[0] for e in entries], [target])
+        self.entry_nodes = [e[0] for e in entries]
+        self.entry_names = [e[1] for e in entries]
+
+        self.output_pack_node = self.path.find_or_declare('app_resources.pbpack')
+
+	sdk_folder = self.bld.root.find_dir(self.bld.env['PEBBLE_SDK'])
+        tools_path = sdk_folder.find_dir('tools')
+        self.mdscript = tools_path.find_node('pbpack_meta_data.py').abspath()
+        self.headerscript = tools_path.find_node('generate_resource_code.py').abspath()
+
+        # timestamp = int(time.time())
+        self.timestamp = str(0)
+
+        self.packs = []
+
+@feature('datapack')
+@after_method('init_datapack')
+def process_packdata(self):
+        self.data_node = self.output_pack_node.change_ext('.pbpack.data')
+        self.packs.append(self.data_node)
+        pbdata_tsk = self.create_task('genpackdata' if self.entry_nodes else 'touch',
+                                      self.entry_nodes, [self.data_node])
 
 class touch(Task.Task):
         color = 'BLUE'
-
-        def run(self):
-		open(self.outputs[0].abspath(), 'a').close()
-
+        def run(self): open(self.outputs[0].abspath(), 'a').close()
 
 class genpackdata(Task.Task):
         color = 'BLUE'
@@ -314,20 +284,13 @@ class genpackdata(Task.Task):
                 cat_string += ' > "{}" '.format(self.outputs[0].abspath())
                 return self.exec_command(cat_string)
 
-@feature('packtable')
+@feature('datapack')
+@after_method('process_packdata')
 def process_packtable(self):
-        target = getattr(self, 'target', False)
-
-        entries = []
-
-        for x in self.to_list(getattr(self, 'resource_dep', [])):
-                y = self.bld.get_tgen_by_name(x)
-                y.post()
-                if getattr(y, 'pack_entries', None):
-                        entries += y.pack_entries
-
-	pbtable_tsk = self.create_task('genpacktable', [e[0] for e in entries], [target])
-        pbtable_tsk.mdscript = getattr(self, 'script', False)
+        table_node = self.output_pack_node.change_ext('.pbpack.table')
+        self.packs.append(table_node)
+	pbtable_tsk = self.create_task('genpacktable', self.entry_nodes, [table_node])
+        pbtable_tsk.mdscript = self.mdscript
 
 class genpacktable(Task.Task):
         color = 'BLUE'
@@ -340,36 +303,24 @@ class genpacktable(Task.Task):
                         table_string += ' {} '.format(entry.abspath())
                 return self.exec_command(table_string)
 
-@feature('packmanifest')
+@feature('datapack')
+@after_method('process_packtable')
 def process_packmanifest(self):
-        target = getattr(self, 'target', False)
-        script = getattr(self, 'script', False)
-        data = getattr(self, 'data', False)
-
-        entries = []
-        for x in self.to_list(getattr(self, 'resource_dep', [])):
-                y = self.bld.get_tgen_by_name(x)
-                y.post()
-                if getattr(y, 'pack_entries', None):
-                        entries += y.pack_entries
-
-        # timestamp = int(time.time())
-        timestamp = str(0)
-
-        manifest_tsk = self.create_task('genmanifest', [data], [target])
-        manifest_tsk.env.append_value('MDSCRIPT', [script])
-        manifest_tsk.env.append_value('NUMFILES', [str(len(entries))])
-        manifest_tsk.env.append_value('TIMESTAMP', [str(timestamp)])
+        manifest_node = self.output_pack_node.change_ext('.pbpack.manifest')
+        self.packs.append(manifest_node)
+        manifest_tsk = self.create_task('genmanifest', [self.data_node], [manifest_node])
+        manifest_tsk.env.append_value('MDSCRIPT', [self.mdscript])
+        manifest_tsk.env.append_value('NUMFILES', [str(len(self.entry_nodes))])
+        manifest_tsk.env.append_value('TIMESTAMP', [str(self.timestamp)])
 
 class genmanifest(Task.Task):
         color = 'BLUE'
         run_str = '${PYTHON} ${MDSCRIPT} manifest ${TGT} ${NUMFILES} ${TIMESTAMP} ${SRC}'
 
-@feature('pbpack')
+@feature('datapack')
+@after_method('process_packmanifest')
 def process_pbpack(self):
-        target = getattr(self, 'target', False)
-        packs = getattr(self, 'packs', False)
-        pbpack_tsk = self.create_task('genpbpack', packs, [target])
+        pbpack_tsk = self.create_task('genpbpack', self.packs, [self.output_pack_node])
 
 class genpbpack(Task.Task):
         color = 'BLUE'
@@ -378,25 +329,18 @@ class genpbpack(Task.Task):
                                                            self.inputs[2], self.outputs[0])
                 return self.exec_command(pbpack_string)
 
-@feature('ids_auto_h')
+@feature('datapack')
+@after_method('process_pbpack')
 def process_appinfo_h(self):
-        target = getattr(self, 'target', False)
-        data = getattr(self, 'data', False)
+        resource_id_header_node = self.path.find_or_declare('src/resource_ids.auto.h')
 
-        entries = []
-
-        for x in self.to_list(getattr(self, 'resource_dep', [])):
-                y = self.bld.get_tgen_by_name(x)
-                y.post()
-                if getattr(y, 'pack_entries', None):
-                        entries += y.pack_entries
-
-	header_tsk = self.create_task('genheader', [data] + [e[0] for e in entries], [target])
-        header_tsk.script = getattr(self, 'script', False)
-        # header_tsk.timestamp = str(int(time.time()))
-        header_tsk.timestamp = str(0)
+	header_tsk = self.create_task('genheader',
+                                      [self.data_node] + self.entry_nodes,
+                                      [resource_id_header_node])
+        header_tsk.script = self.headerscript
+        header_tsk.timestamp = self.timestamp
         header_tsk.resource_header_path = getattr(self, 'header_path', '')
-        header_tsk.def_names = [e[1] for e in entries]
+        header_tsk.def_names = self.entry_names
 
 class genheader(Task.Task):
         color = 'BLUE'
@@ -416,10 +360,9 @@ class genheader(Task.Task):
 @feature('appinfo_auto_c')
 @before_method('process_source')
 def process_appinfo_c(self):
-        appinfo = getattr(self, 'appinfo', None)
-        self.target = getattr(self, 'target', None)
-
-        genautoc_tsk = self.create_task('genautoc', [appinfo], [self.target])
+        appinfo_json_node = getattr(self, 'appinfo', None)
+        self.appinfo_c_node = appinfo_json_node.change_ext('.auto.c')
+        genautoc_tsk = self.create_task('genautoc', [appinfo_json_node], [self.appinfo_c_node])
 
 class genautoc(Task.Task):
 	color   = 'GREEN'
@@ -436,8 +379,8 @@ def retrieve_appinfo_c(self):
         for x in self.to_list('gen_appinfo_auto_c'):
                 y = self.bld.get_tgen_by_name(x)
                 y.post()
-                if getattr(y, 'target', None):
-                        self.source.append(y.target)
+                if getattr(y, 'appinfo_c_node', None):
+                        self.source.append(y.appinfo_c_node)
 
 def append_to_attr(self,attr,new_values):
 	values=self.to_list(getattr(self,attr,[]))
