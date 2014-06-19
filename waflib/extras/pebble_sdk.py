@@ -95,6 +95,7 @@ def configure(conf):
 	conf.env.PEBBLE_SDK=pebble_sdk.abspath()
 
 def build(bld):
+        # Don't know if useful or not...
         c_preproc.enable_file_name_c_define()
 
         appinfo_json_node = bld.path.find_node('appinfo.json')
