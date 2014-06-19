@@ -97,9 +97,6 @@ def configure(conf):
 def build(bld):
         c_preproc.enable_file_name_c_define()
 
-        sdk_folder = bld.root.find_dir(bld.env['PEBBLE_SDK'])
-        tools_path = sdk_folder.find_dir('tools')
-
         appinfo_json_node = bld.path.find_node('appinfo.json')
 	if appinfo_json_node is None:
 		bld.fatal('Could not find appinfo.json')
@@ -107,24 +104,13 @@ def build(bld):
                 appinfo = json.load(f)
         resources = appinfo['resources']
 
-        bld(features     = 'png',
-            name         = 'png_proc',
-            resources    = resources,
-            script       = tools_path.find_node('bitmapgen.py').abspath())
+        bld(features       = 'appinfo_res',
+            name           = 'gen_appinfo_res',
+            resources      = resources,
+        )
 
-        bld(features     = 'font',
-            name         = 'font_proc',
-            resources    = resources,
-            script       = tools_path.find_node('font/fontgen.py').abspath())
-
-        bld(features     = 'png-trans',
-            name         = 'png-trans_proc',
-            resources    = resources,
-            script       = tools_path.find_node('bitmapgen.py').abspath())
-
-        bld(features     = 'raw',
-            name         = 'raw_proc',
-            resources    = resources)
+	sdk_folder = bld.root.find_dir(bld.env['PEBBLE_SDK'])
+        tools_path = sdk_folder.find_dir('tools')
 
         output_pack_node = bld.path.find_or_declare('app_resources.pbpack')
         manifest_node = output_pack_node.change_ext('.pbpack.manifest')
@@ -134,42 +120,42 @@ def build(bld):
         bld(features      = 'packdata',
             name          = 'gen_packdata',
             target        = data_node,
-            resource_dep  = ['png_proc', 'png-trans_proc', 'font_proc', 'raw_proc'])
+            resource_dep  = ['gen_appinfo_res'])
 
         bld(features       = 'packtable',
             name           = 'gen_packtable',
             target         = table_node,
             script         = tools_path.find_node('pbpack_meta_data.py').abspath(),
-            resource_dep   = ['png_proc', 'png-trans_proc', 'font_proc', 'raw_proc'])
+            resource_dep   = ['gen_appinfo_res'])
 
         bld(features       = 'packmanifest',
             name           = 'gen_packmanifest',
             data           = data_node,
             target         = manifest_node,
             script         = tools_path.find_node('pbpack_meta_data.py').abspath(),
-            resource_dep   = ['png_proc', 'png-trans_proc', 'font_proc', 'raw_proc'])
+            resource_dep   = ['gen_appinfo_res'])
 
         bld(features       = 'pbpack',
             name           = 'gen_pbpack',
             packs          = [manifest_node, table_node, data_node],
             target         = output_pack_node)
 
-        resource_id_header_node = bld.path.find_or_declare('src/resource_ids.auto.h')
+        # resource_id_header_node = bld.path.find_or_declare('src/resource_ids.auto.h')
 
-        bld(features       = 'ids_auto_h',
-            name           = 'gen_ids_auto_h',
-            data           = data_node,
-            target         = resource_id_header_node,
-            script         = tools_path.find_node('generate_resource_code.py').abspath(),
-            header_path    = 'pebble.h',
-            resource_dep   = ['png_proc', 'png-trans_proc', 'font_proc', 'raw_proc'])
+        # bld(features       = 'ids_auto_h',
+        #     name           = 'gen_ids_auto_h',
+        #     data           = data_node,
+        #     target         = resource_id_header_node,
+        #     script         = tools_path.find_node('generate_resource_code.py').abspath(),
+        #     header_path    = 'pebble.h',
+        #     resource_dep   = ['png_proc', 'png-trans_proc', 'font_proc', 'raw_proc'])
 
-        appinfo_auto_c_node = appinfo_json_node.change_ext('.auto.c')
+        # appinfo_auto_c_node = appinfo_json_node.change_ext('.auto.c')
 
-        bld(features       = 'appinfo_auto_c',
-            name           = 'gen_appinfo_auto_c',
-            appinfo        = appinfo_json_node,
-            target         = appinfo_auto_c_node)
+        # bld(features       = 'appinfo_auto_c',
+        #     name           = 'gen_appinfo_auto_c',
+        #     appinfo        = appinfo_json_node,
+        #     target         = appinfo_auto_c_node)
 
 class resources(Task.Task):
 	color   = 'BLUE'
@@ -201,72 +187,74 @@ class resources(Task.Task):
 		ret = self.cache_sig = self.m.digest()
 		return ret
 
-class AppInfoResources(object):
-        @staticmethod
-        def process(bld, resources, ext):
-                lst = []
-                resources_node = bld.bld.srcnode.find_node('resources')
-                for res in resources['media']:
-                        def_name = res["name"]
-                        res_type=res["type"]
-                        input_file=str(res["file"])
-                        if res_type == ext:
-                                input_node = resources_node.find_node(input_file)
-                                if input_node is None:
-                                        bld.fatal("Could not find {} resource <{}>"
-                                                  .format(res_type,input_file))
-                                else:
-                                        lst.append((input_node, def_name))
-                return lst
+def process(tg):
+        lst_raw, lst_png, lst_png_trans, lst_font = [], [], [], []
+        resources_node = tg.bld.srcnode.find_node('resources')
+        for res in tg.resources['media']:
+                def_name = res["name"]
+                res_type=res["type"]
+                input_file=str(res["file"])
+                input_node = resources_node.find_node(input_file)
+                if input_node is None:
+                        tg.fatal("Could not find {} resource <{}>"
+                                 .format(res_type,input_file))
+                else:
+                        if res_type == 'raw':
+                                lst_raw.append((input_node, def_name))
+                        elif res_type == 'png':
+                                lst_png.append((input_node, def_name))
+                        elif res_type == 'png-trans':
+                                lst_png_trans.append((input_node, def_name))
+                        elif res_type == 'font':
+                                lst_font.append((input_node, def_name))
+        return lst_raw, lst_png, lst_png_trans, lst_font
 
-@feature('png')
-def process_png(self):
+@feature('appinfo_res')
+def init_appinfo_res(self):
         self.pack_entries = []
+        self.resources = getattr(self, 'resources', False)
 
-        resources = getattr(self, 'resources', False)
-        script = getattr(self, 'script', False)
+	sdk_folder = self.bld.root.find_dir(self.bld.env['PEBBLE_SDK'])
+        tools_path = sdk_folder.find_dir('tools')
 
-        png_nodes  = AppInfoResources.process(self, resources, 'png')
-        for input_node, def_name in png_nodes:
+        self.bitmapscript = tools_path.find_node('bitmapgen.py').abspath()
+        self.fontscript = tools_path.find_node('font/fontgen.py').abspath()
+
+        self.raw_nodes, self.png_nodes, self.png_trans_nodes, self.font_nodes = process(self)
+
+@feature('appinfo_res')
+@after_method('init_appinfo_res')
+def process_bpi(self):
+        for input_node, def_name in self.png_nodes:
                 output_node = input_node.change_ext('.png.pbi')
                 self.pack_entries.append((output_node, def_name))
                 pbi_tsk = self.create_task('genpbi',
                                            [input_node],
                                            [output_node])
-                pbi_tsk.resources = resources
-                pbi_tsk.env.append_value('BITMAPSCRIPT', [script])
+                pbi_tsk.resources = self.resources
+                pbi_tsk.env.append_value('BITMAPSCRIPT', [self.bitmapscript])
 
-@feature('png-trans')
-def process_png_trans(self):
-        self.pack_entries = []
-
-        resources = getattr(self, 'resources', False)
-        script = getattr(self, 'script', False)
-
-        png_nodes  = AppInfoResources.process(self, resources, 'png-trans')
-        for input_node, def_name in png_nodes:
+@feature('appinfo_res')
+@after_method('process_pbi')
+def process_trans_bpi(self):
+        for input_node, def_name in self.png_trans_nodes:
                 for color in ['white', 'black']:
                         output_node = input_node.change_ext(".png.{}.pbi".format(color))
                         self.pack_entries.append((output_node,"{}_{}".format(def_name, color.upper())))
                         pbi_tsk = self.create_task('genpbi',
                                                    [input_node],
                                                    [output_node])
-                        pbi_tsk.resources = resources
-                        pbi_tsk.env.append_value('BITMAPSCRIPT', [script])
+                        pbi_tsk.resources = self.resources
+                        pbi_tsk.env.append_value('BITMAPSCRIPT', [self.bitmapscript])
 
 class genpbi(resources):
         color = 'BLUE'
         run_str = '${PYTHON} ${BITMAPSCRIPT} pbi ${SRC} ${TGT}'
 
-@feature('font')
+@feature('appinfo_res')
+@after_method('process_trans_pbi')
 def process_font(self):
-        self.pack_entries = []
-
-        resources = getattr(self, 'resources', False)
-        script = getattr(self, 'script', False)
-
-        font_nodes = AppInfoResources.process(self, resources, 'font')
-        for input_node, def_name in font_nodes:
+        for input_node, def_name in self.font_nodes:
                 output_node = input_node.change_ext('.' + str(def_name) + '.pfo')
                 self.pack_entries.append((output_node, def_name))
                 font_tsk = self.create_task('genpfo',
@@ -281,22 +269,18 @@ def process_font(self):
                 else:
                         height = int(m.group(0))
 
-                font_tsk.resources = resources
-                font_tsk.env.append_value('FONTSCRIPT', [script])
+                font_tsk.resources = self.resources
+                font_tsk.env.append_value('FONTSCRIPT', [self.fontscript])
                 font_tsk.env.append_value('FONTHEIGHT', [str(height)])
 
 class genpfo(resources):
         color = 'BLUE'
         run_str = '${PYTHON} ${FONTSCRIPT} pfo ${FONTHEIGHT} ${SRC} ${TGT}'
 
-@feature('raw')
+@feature('appinfo_res')
+@after_method('process_font')
 def process_raw(self):
-        self.pack_entries = []
-
-        resources = getattr(self, 'resources', False)
-
-        raw_nodes = AppInfoResources.process(self, resources, 'raw')
-        for input_node, def_name in raw_nodes:
+        for input_node, def_name in self.raw_nodes:
                 self.pack_entries.append((input_node, def_name))
 
 @feature('packdata')
