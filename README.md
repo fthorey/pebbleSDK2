@@ -24,7 +24,9 @@ Modifications
 
 - Add arm-toolchain-path option to specify the path the ARM cross toolchain and pebble-sdk option to specify the path of the PebbleSDK directory. Useful when using directly waf in the app build directory.
 
+- All tests in PebbleSDK/Pebble/Examples build successfully.
+
 Limitations
 -------------
 
-- For rule-based Task Generator processing font_key_header and font_key_table, the corresponding nodes (font_key_header_node, font_key_table_node, font_key_include_path) must be provided as arugments to the higher level Task Generator (appinfo_res). Also, I don't understand in which case they might be set.
+- For rule-based Task Generator processing font_key_header and font_key_table, the corresponding nodes (font_key_header_node, font_key_table_node, font_key_include_path) must be provided as arugments to the higher level Task Generator (appinfo_res). Also, I don't understand in which case they might be used.
