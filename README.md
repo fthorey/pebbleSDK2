@@ -5,9 +5,9 @@ Improve waf-based Pebble SDK build system regarding dependencies handling.
 
 How to create the waf script for PebbleSDK
 -------------------------------------------
-Simply execute:
-./waf-light configure build
-And replace the generated waf script into your PebbleSDK/Pebble directory
+Simply execute:\n
+./waf-light configure build\n
+And replace the generated waf script into your PebbleSDK/Pebble directory\n
 
 Modifications
 -------------
