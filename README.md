@@ -5,9 +5,11 @@ Improve waf-based Pebble SDK build system regarding dependencies handling.
 
 How to create the waf script for PebbleSDK
 -------------------------------------------
-Simply execute:\n
-./waf-light configure build\n
-And replace the generated waf script into your PebbleSDK/Pebble directory\n
+Simply execute in this directory:
+
+*./waf-light configure build*
+
+And replace the generated **waf** script into your *PebbleSDK/Pebble* directory
 
 Modifications
 -------------
@@ -25,4 +27,4 @@ Modifications
 Limitations
 -------------
 
-- For rule-based Task Generator processing font_key_header and font_key_table, the corresponding nodes (font_key_header_node, font_key_table_node, font_key_include_path) must be provided as arugments to the higher level Task Generator (appinfo_res).
+- For rule-based Task Generator processing font_key_header and font_key_table, the corresponding nodes (font_key_header_node, font_key_table_node, font_key_include_path) must be provided as arugments to the higher level Task Generator (appinfo_res). Also, I don't understand in which case they might be set.
