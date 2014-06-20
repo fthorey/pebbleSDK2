@@ -184,16 +184,16 @@ def init_appinfo_res(self):
                                         height = int(m.group(0))
                                 self.fonts[def_name]['height'] = height
 
-                                if'trackingAdjust'in res:
-                                        trackingAdjustArg = '--tracking %i' % \
-                                                            res['trackingAdjust']
+                                if 'trackingAdjust'in res:
+                                        trackingAdjustArg = '--tracking %i'%res['trackingAdjust']
+
                                 else:
                                         trackingAdjustArg = ''
                                 self.fonts[def_name]['tracking'] = trackingAdjustArg
 
-                                if'characterRegex'in res:
-                                        characterRegexArg = '--filter "%s"' % \
-                                                            (res['characterRegex'].encode('utf8'))
+                                if 'characterRegex'in res:
+                                        characterRegexArg='--filter "%s"'%(res['characterRegex'].encode('utf8'))
+
                                 else:
                                         characterRegexArg = ''
                                 self.fonts[def_name]['regex'] = characterRegexArg
@@ -233,18 +233,14 @@ def process_font(self):
         for input_node, def_name in self.font_nodes:
                 output_node = input_node.change_ext('.' + str(def_name) + '.pfo')
                 self.pack_entries.append((output_node, def_name))
-                font_tsk = self.create_task('genpfo',
-                                            [input_node],
-                                            [output_node])
-                font_tsk.resources = self.resources
-                font_tsk.env.append_value('FONTSCRIPT', [self.fontscript])
-                font_tsk.env.append_value('FONTHEIGHT', [str(self.fonts[def_name]['height'])])
-                font_tsk.env.append_value('TRACKARG', [self.fonts[def_name]['tracking']])
-                font_tsk.env.append_value('REGEX', [self.fonts[def_name]['regex']])
 
-class genpfo(resources):
-        color = 'BLUE'
-        run_str = '${PYTHON} ${FONTSCRIPT} pfo ${FONTHEIGHT} ${TRACKARG} ${REGEX} ${SRC} ${TGT}'
+                self.bld(rule="python '{}' pfo {} {} {} '{}' '{}'"
+                         .format(self.fontscript,self.fonts[def_name]['height'],
+                                 self.fonts[def_name]['tracking'],
+                                 self.fonts[def_name]['tracking'],
+                                 input_node.abspath(),
+                                 output_node.abspath()),
+                         source = input_node, target = output_node)
 
 @feature('appinfo_res')
 @after_method('process_font')
