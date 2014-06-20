@@ -237,7 +237,7 @@ def process_font(self):
                 self.bld(rule="python '{}' pfo {} {} {} '{}' '{}'"
                          .format(self.fontscript,self.fonts[def_name]['height'],
                                  self.fonts[def_name]['tracking'],
-                                 self.fonts[def_name]['tracking'],
+                                 self.fonts[def_name]['regex'],
                                  input_node.abspath(),
                                  output_node.abspath()),
                          source = input_node, target = output_node)
