@@ -248,6 +248,33 @@ class genpfo(resources):
 
 @feature('appinfo_res')
 @after_method('process_font')
+def process_font_key(self):
+        font_key_header_node = getattr(self, 'font_key_header', None)
+        font_key_table_node = getattr(self, 'font_key_table', None)
+        font_key_include_path = getattr(self, 'font_key_include', None)
+
+	if font_key_header_node and font_key_table_node and font_key_include_path:
+
+		key_list_string=" ".join(self.fonts.keys())
+
+		bld(rule = "python '{script}' font_key_header '{font_key_header}' ""{key_list}"
+                    .format(script = resource_code_script.abspath(),
+                            font_key_header = font_key_header_node.abspath(),
+                            key_list = key_list_string),
+                    source = resource_code_script,
+                    target = font_key_header_node)
+
+		bld(rule = "python '{script}' font_key_table '{font_key_table}' "" '{resource_id_header}' '{font_key_header}' {key_list}"
+                    .format(script = resource_code_script.abspath(),
+                            font_key_table = font_key_table_node.abspath(),
+                            resource_id_header = output_id_header_node.abspath(),
+                            font_key_header = font_key_include_path,
+                            key_list = key_list_string),
+                    source = resource_code_script,
+                    target = font_key_table_node)
+
+@feature('appinfo_res')
+@after_method('process_font_key')
 def process_raw(self):
         for input_node, def_name in self.raw_nodes:
                 self.pack_entries.append((input_node, def_name))
