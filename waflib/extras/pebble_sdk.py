@@ -387,10 +387,12 @@ def process_entries(self):
 
 @feature('resource_ids_h')
 def process_resource_ids_h(self):
-        if getattr(self, 'resource_ids', False):
-                resource_id_header_node = self.path.find_or_declare(getattr(self, 'resource_ids', ''))
+        if getattr(self, 'res_ids_path', False):
+                self.resource_id_header_path = getattr(self, 'res_ids_path', '')
         else:
-                resource_id_header_node = self.path.find_or_declare('src/resource_ids.auto.h')
+                self.resource_id_header_path = 'src/resource_ids.auto.h'
+
+        resource_id_header_node = self.path.find_or_declare(self.resource_id_header_path)
 
         data_node = self.path.find_or_declare('app_resources.pbpack.data')
 
@@ -403,7 +405,7 @@ def process_resource_ids_h(self):
         header_tsk.def_names = self.entry_names
 
 class genheader(Task.Task):
-        color = 'BLUE'
+        color = 'YELLOW'
         ext_out = ['.h']
 
         def run(self):
@@ -420,8 +422,8 @@ class genheader(Task.Task):
 @feature('appinfo_auto_c')
 @before_method('process_source')
 def process_appinfo_c(self):
-        if getattr(self, 'resource_ids', False):
-                resource_id_header_path = getattr(self, 'resource_ids', '')
+        if getattr(self, 'res_ids_path', False):
+                resource_id_header_path = getattr(self, 'res_ids_path', '')
         else:
                 resource_id_header_path = 'src/resource_ids.auto.h'
 
