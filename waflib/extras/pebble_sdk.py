@@ -108,12 +108,16 @@ def build(bld):
 
         bld(features      = 'datapack',
             name          = 'gen_datapack',
-            header_path    = 'pebble.h',
             resource_dep  = ['gen_appinfo_res'])
+
+        bld(features       ='resource_ids_h',
+            header_path   = 'pebble.h',
+            name           = 'gen_resource_ids_h')
 
         bld(features       = 'appinfo_auto_c',
             name           = 'gen_appinfo_auto_c',
-            appinfo        = appinfo_json_node)
+            appinfo        = bld.path.find_node('appinfo.json'))
+
 
 class resources(Task.Task):
 	color   = 'BLUE'
@@ -285,14 +289,12 @@ def init_datapack(self):
                         entries += y.pack_entries
 
         self.entry_nodes = [e[0] for e in entries]
-        self.entry_names = [e[1] for e in entries]
 
         self.output_pack_node = self.path.find_or_declare('app_resources.pbpack')
 
 	sdk_folder = self.bld.root.find_dir(self.bld.env['PEBBLE_SDK'])
         tools_path = sdk_folder.find_dir('tools')
         self.mdscript = tools_path.find_node('pbpack_meta_data.py').abspath()
-        self.headerscript = tools_path.find_node('generate_resource_code.py').abspath()
 
 	self.timestamp = self.bld.options.timestamp
 	if self.timestamp == None:
@@ -367,13 +369,36 @@ class genpbpack(Task.Task):
                                                            self.inputs[2], self.outputs[0])
                 return self.exec_command(pbpack_string)
 
-@feature('datapack')
-@after_method('process_pbpack')
-def process_appinfo_h(self):
-        resource_id_header_node = self.path.find_or_declare('src/resource_ids.auto.h')
+@feature('resource_ids_h')
+@before_method('process_resource_ids_h')
+def process_entries(self):
+        entries = []
+        genres = self.bld.get_tgen_by_name('gen_appinfo_res')
+        genres.post()
+        entries += genres.pack_entries
+
+        self.entry_nodes = [e[0] for e in entries]
+        self.entry_names = [e[1] for e in entries]
+
+        genpack = self.bld.get_tgen_by_name('gen_datapack')
+        genpack.post()
+        self.timestamp = genpack.timestamp
+
+	sdk_folder = self.bld.root.find_dir(self.bld.env['PEBBLE_SDK'])
+        tools_path = sdk_folder.find_dir('tools')
+        self.headerscript = tools_path.find_node('generate_resource_code.py').abspath()
+
+@feature('resource_ids_h')
+def process_resource_ids_h(self):
+        if getattr(self, 'resource_ids', False):
+                resource_id_header_node = self.path.find_or_declare(getattr(self, 'resource_ids', ''))
+        else:
+                resource_id_header_node = self.path.find_or_declare('src/resource_ids.auto.h')
+
+        data_node = self.path.find_or_declare('app_resources.pbpack.data')
 
 	header_tsk = self.create_task('genheader',
-                                      [self.data_node] + self.entry_nodes,
+                                      [data_node] + self.entry_nodes,
                                       [resource_id_header_node])
         header_tsk.script = self.headerscript
         header_tsk.timestamp = self.timestamp
