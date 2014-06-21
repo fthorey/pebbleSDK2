@@ -6,7 +6,7 @@ from waflib import Task
 import json
 import string
 import uuid
-def generate_appinfo(input_filename,output_filename):
+def generate_appinfo(input_filename, input_header_filename, output_filename):
 	with open(input_filename,'r')as json_file:
 		try:
 			app_info=json.load(json_file)
@@ -68,7 +68,7 @@ def generate_appinfo(input_filename,output_filename):
 		flags_string='0'
 	with open(output_filename,'w')as f:
 		f.write('#include "pebble_app_info.h"\n')
-		f.write('#include "src/resource_ids.auto.h"\n')
+		f.write('#include "{}"\n'.format(input_header_filename))
 		f.write(PEBBLE_APP_INFO_TEMPLATE.substitute(version_major=version_label_major,version_minor=version_label_minor,name=name,company=company_name,icon_resource_id=icon_resource_id,flags=flags_string,uuid=uuid_initializer_string))
 PEBBLE_APP_INFO_TEMPLATE=string.Template("""
 const PebbleAppInfo __pbl_app_info __attribute__ ((section (".pbl_header"))) = {

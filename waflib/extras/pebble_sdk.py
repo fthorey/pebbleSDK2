@@ -420,15 +420,25 @@ class genheader(Task.Task):
 @feature('appinfo_auto_c')
 @before_method('process_source')
 def process_appinfo_c(self):
+        if getattr(self, 'resource_ids', False):
+                resource_id_header_path = getattr(self, 'resource_ids', '')
+        else:
+                resource_id_header_path = 'src/resource_ids.auto.h'
+
+        resource_id_header_node = self.path.find_or_declare(resource_id_header_path)
+
         appinfo_json_node = getattr(self, 'appinfo', None)
         self.appinfo_c_node = appinfo_json_node.change_ext('.auto.c')
-        genautoc_tsk = self.create_task('appinfo_c', [appinfo_json_node], [self.appinfo_c_node])
+        genautoc_tsk = self.create_task('appinfo_c',
+                                        [appinfo_json_node],
+                                        [self.appinfo_c_node])
+        genautoc_tsk.header_path = resource_id_header_path
 
 class appinfo_c(Task.Task):
 	color   = 'GREEN'
         def run(self):
                 import waflib.extras.generate_appinfo as generate_appinfo
-                generate_appinfo.generate_appinfo(self.inputs[0].abspath(),
+                generate_appinfo.generate_appinfo(self.inputs[0].abspath(), self.header_path,
                                                   self.outputs[0].abspath())
 
 def append_to_attr(self,attr,new_values):
