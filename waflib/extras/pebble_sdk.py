@@ -282,12 +282,9 @@ def process_raw(self):
 @feature('datapack')
 def init_datapack(self):
         entries = []
-        for x in self.to_list(getattr(self, 'resource_dep', [])):
-                y = self.bld.get_tgen_by_name(x)
-                y.post()
-                if getattr(y, 'pack_entries', None):
-                        entries += y.pack_entries
-
+        genres = self.bld.get_tgen_by_name('gen_appinfo_res')
+        genres.post()
+        entries += genres.pack_entries
         self.entry_nodes = [e[0] for e in entries]
 
         self.output_pack_node = self.path.find_or_declare('app_resources.pbpack')
