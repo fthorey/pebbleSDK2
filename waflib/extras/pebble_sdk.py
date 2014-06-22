@@ -37,7 +37,6 @@ def options(opt):
 
 def configure(conf):
 	conf.load('python')
-
         arm_path = []
         try:
                 path = os.path.abspath("{}{}{}{}{}".format(Options.options.pebblesdk, os.sep, 'arm-cs-tools', os.sep, 'bin'))
@@ -158,7 +157,7 @@ def init_appinfo_res(self):
         self.bitmapscript = tools_path.find_node('bitmapgen.py').abspath()
         self.fontscript = tools_path.find_node('font/fontgen.py').abspath()
 
-        self.out_fp = getattr(self, 'out_footprint', '')
+        self.out_marker = getattr(self, 'out_marker', '')
 
         self.raw_nodes, self.png_nodes, self.png_trans_nodes, self.font_nodes = [], [], [], []
         self.fonts = {}
@@ -207,39 +206,31 @@ def init_appinfo_res(self):
 @feature('appinfo_res')
 @after_method('init_appinfo_res')
 def process_bpi(self):
-
         for input_node, def_name in self.png_nodes:
-                if self.out_fp == '':
+                if self.out_marker == '':
                         output_node = input_node.change_ext('.png.pbi')
                 else:
-                        output_node = input_node.change_ext('_{}.png.pbi'.format(self.out_fp))
+                        output_node = input_node.change_ext('_{}.png.pbi'.format(self.out_marker))
                 self.pack_entries.append((output_node, def_name))
                 if not getattr(self, 'dry_run', False):
-                        pbi_tsk = self.create_task('genpbi',
-                                                   [input_node],
-                                                   [output_node])
+                        pbi_tsk = self.create_task('genpbi', [input_node], [output_node])
                         pbi_tsk.resources = self.resources
                         pbi_tsk.env.append_value('BITMAPSCRIPT', [self.bitmapscript])
 
 @feature('appinfo_res')
 @after_method('process_pbi')
 def process_trans_bpi(self):
-        if getattr(self, 'dry_run', False):
-                return
-
         for input_node, def_name in self.png_trans_nodes:
                 for color in ['white', 'black']:
-                        if self.out_fp == '':
+                        if self.out_marker == '':
                                 output_node = input_node.change_ext('.png.{}.pbi'
                                                                     .format(color))
                         else:
                                 output_node = input_node.change_ext("_{}.png.{}.pbi"
-                                                                    .format(self.out_fp, color))
+                                                                    .format(self.out_marker, color))
                         self.pack_entries.append((output_node,"{}_{}".format(def_name, color.upper())))
                         if not getattr(self, 'dry_run', False):
-                                pbi_tsk = self.create_task('genpbi',
-                                                           [input_node],
-                                                           [output_node])
+                                pbi_tsk = self.create_task('genpbi', [input_node], [output_node])
                                 pbi_tsk.resources = self.resources
                                 pbi_tsk.env.append_value('BITMAPSCRIPT', [self.bitmapscript])
 
@@ -250,21 +241,16 @@ class genpbi(resources):
 @feature('appinfo_res')
 @after_method('process_trans_pbi')
 def process_font(self):
-        if getattr(self, 'dry_run', False):
-                return
-
         for input_node, def_name in self.font_nodes:
-                if self.out_fp == '':
+                if self.out_marker == '':
                         output_node = input_node.change_ext('.' +
                                                             str(def_name) + '.pfo')
                 else:
-                        output_node = input_node.change_ext('_{}.'.format(self.out_fp) +
+                        output_node = input_node.change_ext('_{}.'.format(self.out_marker) +
                                                             str(def_name) + '.pfo')
                 self.pack_entries.append((output_node, def_name))
                 if not getattr(self, 'dry_run', False):
-                        font_tsk = self.create_task('genpfo',
-                                                    [input_node],
-                                                    [output_node])
+                        font_tsk = self.create_task('genpfo', [input_node], [output_node])
                         font_tsk.resources = self.resources
                         font_tsk.env.append_value('FONTSCRIPT', [self.fontscript])
                         font_tsk.env.append_value('FONTHEIGHT', [str(self.fonts[def_name]['height'])])
@@ -278,21 +264,16 @@ class genpfo(resources):
 @feature('appinfo_res')
 @after_method('process_trans_pbi')
 def process_raw(self):
-        if getattr(self, 'dry_run', False):
-                return
-
         for input_node, def_name in self.raw_nodes:
-                if self.out_fp == '':
+                if self.out_marker == '':
                         output_node = input_node.change_ext(os.path.splitext(input_node.abspath())[1])
 
                 else:
-                        output_node = input_node.change_ext('_{}{}'.format(self.out_fp,
+                        output_node = input_node.change_ext('_{}{}'.format(self.out_marker,
                                                                            os.path.splitext(input_node.abspath())[1]))
                 self.pack_entries.append((output_node, def_name))
                 if not getattr(self, 'dry_run', False):
-                        raw_tsk = self.create_task('genraw',
-                                                   [input_node],
-                                                   [output_node])
+                        raw_tsk = self.create_task('genraw', [input_node], [output_node])
                         raw_tsk.resources = self.resources
 
 class genraw(resources):
@@ -307,9 +288,9 @@ def init_datapack(self):
                 if getattr(y, 'pack_entries', []):
                         self.pack_entries = y.pack_entries
                         self.entry_nodes = [e[0] for e in self.pack_entries]
-                self.out_fp = y.out_fp
+                self.out_marker = y.out_marker
 
-        self.output_pack_node = self.path.find_or_declare(self.out_fp + os.sep +
+        self.output_pack_node = self.path.find_or_declare(self.out_marker + os.sep +
                                                           'app_resources.pbpack')
 
 	sdk_folder = self.bld.root.find_dir(self.bld.env['PEBBLE_SDK'])
@@ -399,10 +380,10 @@ def process_entries(self):
         self.entry_nodes = [e[0] for e in genpack.pack_entries]
         self.entry_names = [e[1] for e in genpack.pack_entries]
         self.timestamp = genpack.timestamp
-        self.out_fp = genpack.out_fp
+        self.out_marker = genpack.out_marker
 
-	sdk_folder = self.bld.root.find_dir(self.bld.env['PEBBLE_SDK'])
-        tools_path = sdk_folder.find_dir('tools')
+	self.sdk_folder = self.bld.root.find_dir(self.bld.env['PEBBLE_SDK'])
+        tools_path = self.sdk_folder.find_dir('tools')
         self.headerscript = tools_path.find_node('generate_resource_code.py').abspath()
 
 @feature('resource_ids_h')
@@ -413,7 +394,7 @@ def process_resource_ids_h(self):
                 self.resource_id_header_path = 'src/resource_ids.auto.h'
 
         resource_id_header_node = self.path.find_or_declare(self.resource_id_header_path)
-        data_node = self.path.find_or_declare(self.out_fp + os.sep + 'app_resources.pbpack.data')
+        data_node = self.path.find_or_declare(self.out_marker + os.sep + 'app_resources.pbpack.data')
 
 	header_tsk = self.create_task('genheader',
                                       [data_node] + self.entry_nodes,
@@ -450,11 +431,11 @@ def process_appinfo_c(self):
 
         appinfo_json_node = getattr(self, 'appinfo', None)
 
-        out_fp = getattr(self, 'out_footprint', '')
-        if out_fp == '':
+        out_marker = getattr(self, 'out_marker', '')
+        if out_marker == '':
                 self.appinfo_c_node = appinfo_json_node.change_ext('.auto.c')
         else:
-                self.appinfo_c_node = appinfo_json_node.change_ext('_{}.auto.c'.format(out_fp))
+                self.appinfo_c_node = appinfo_json_node.change_ext('_{}.auto.c'.format(out_marker))
         genautoc_tsk = self.create_task('appinfo_c',
                                         [appinfo_json_node],
                                         [self.appinfo_c_node])
@@ -488,11 +469,11 @@ def setup_cprogram(self):
 @before_method('process_source')
 def setup_pebble_cprogram(self):
 	sdk_folder=self.bld.root.find_dir(self.bld.env['PEBBLE_SDK'])
-        out_fp = getattr(self, 'out_footprint', '')
-        if out_fp == '':
+        out_marker = getattr(self, 'out_marker', '')
+        if out_marker == '':
                 append_to_attr(self,'source', [self.path.find_or_declare('appinfo.auto.c')])
         else:
-                append_to_attr(self,'source', [self.path.find_or_declare('appinfo_{}.auto.c'.format(out_fp))])
+                append_to_attr(self,'source', [self.path.find_or_declare('appinfo_{}.auto.c'.format(out_marker))])
 
 	append_to_attr(self,'stlibpath',[sdk_folder.find_dir('lib').abspath()])
 	append_to_attr(self,'stlib',['pebble'])
