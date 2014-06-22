@@ -104,13 +104,9 @@ def build(bld):
             appinfo        = appinfo_json_node)
 
         bld(features      = 'datapack',
+            header_path    = 'pebble.h',
             name          = 'gen_datapack',
             use           = 'gen_appinfo_res')
-
-        bld(features       ='resource_ids_h',
-            header_path    = 'pebble.h',
-            use            = 'gen_datapack',
-            name           = 'gen_resource_ids_h')
 
         bld(features       = 'appinfo_auto_c',
             name           = 'gen_appinfo_auto_c',
@@ -154,8 +150,6 @@ def init_appinfo_res(self):
 
         self.bitmapscript = tools_path.find_node('bitmapgen.py').abspath()
         self.fontscript = tools_path.find_node('font/fontgen.py').abspath()
-
-        self.out_marker = getattr(self, 'out_marker', '')
 
         self.raw_nodes, self.png_nodes, self.png_trans_nodes, self.font_nodes = [], [], [], []
         self.fonts = {}
@@ -205,10 +199,7 @@ def init_appinfo_res(self):
 @after_method('init_appinfo_res')
 def process_bpi(self):
         for input_node, def_name in self.png_nodes:
-                if self.out_marker == '':
-                        output_node = input_node.change_ext('.png.pbi')
-                else:
-                        output_node = input_node.change_ext('_{}.png.pbi'.format(self.out_marker))
+                output_node = input_node.change_ext('.png.pbi')
                 self.pack_entries.append((output_node, def_name))
                 if not getattr(self, 'dry_run', False):
                         pbi_tsk = self.create_task('genpbi', [input_node], [output_node])
@@ -220,12 +211,7 @@ def process_bpi(self):
 def process_trans_bpi(self):
         for input_node, def_name in self.png_trans_nodes:
                 for color in ['white', 'black']:
-                        if self.out_marker == '':
-                                output_node = input_node.change_ext('.png.{}.pbi'
-                                                                    .format(color))
-                        else:
-                                output_node = input_node.change_ext("_{}.png.{}.pbi"
-                                                                    .format(self.out_marker, color))
+                        output_node = input_node.change_ext('.png.{}.pbi'.format(color))
                         self.pack_entries.append((output_node,"{}_{}".format(def_name, color.upper())))
                         if not getattr(self, 'dry_run', False):
                                 pbi_tsk = self.create_task('genpbi', [input_node], [output_node])
@@ -240,12 +226,7 @@ class genpbi(resources):
 @after_method('process_trans_pbi')
 def process_font(self):
         for input_node, def_name in self.font_nodes:
-                if self.out_marker == '':
-                        output_node = input_node.change_ext('.' +
-                                                            str(def_name) + '.pfo')
-                else:
-                        output_node = input_node.change_ext('_{}.'.format(self.out_marker) +
-                                                            str(def_name) + '.pfo')
+                output_node = input_node.change_ext('.' + str(def_name) + '.pfo')
                 self.pack_entries.append((output_node, def_name))
                 if not getattr(self, 'dry_run', False):
                         font_tsk = self.create_task('genpfo', [input_node], [output_node])
@@ -263,37 +244,22 @@ class genpfo(resources):
 @after_method('process_trans_pbi')
 def process_raw(self):
         for input_node, def_name in self.raw_nodes:
-                if self.out_marker == '':
-                        output_node = input_node.change_ext(os.path.splitext(input_node.abspath())[1])
-
-                else:
-                        output_node = input_node.change_ext('_{}{}'.format(self.out_marker,
-                                                                           os.path.splitext(input_node.abspath())[1]))
-                self.pack_entries.append((output_node, def_name))
-                if not getattr(self, 'dry_run', False):
-                        raw_tsk = self.create_task('genraw', [input_node], [output_node])
-                        raw_tsk.resources = self.resources
-
-class genraw(resources):
-	color = 'BLUE'
-	run_str = "cp ${SRC} ${TGT}"
+                self.pack_entries.append((input_node, def_name))
 
 @feature('datapack')
 def init_datapack(self):
-        for x in self.to_list(getattr(self, 'use', [])):
-                y = self.bld.get_tgen_by_name(x)
-                y.post()
-                if getattr(y, 'pack_entries', []):
-                        self.pack_entries = y.pack_entries
-                        self.entry_nodes = [e[0] for e in self.pack_entries]
-                self.out_marker = y.out_marker
+        y = self.bld.get_tgen_by_name(getattr(self, 'use', []))
+        y.post()
+        self.pack_entries = y.pack_entries
+        self.entry_nodes = [e[0] for e in self.pack_entries]
+        self.entry_names = [e[1] for e in self.pack_entries]
 
-        self.output_pack_node = self.path.find_or_declare(self.out_marker + os.sep +
-                                                          'app_resources.pbpack')
+        self.output_pack_node = self.path.find_or_declare('app_resources.pbpack')
 
 	sdk_folder = self.bld.root.find_dir(self.bld.env['PEBBLE_SDK'])
         tools_path = sdk_folder.find_dir('tools')
         self.mdscript = tools_path.find_node('pbpack_meta_data.py').abspath()
+        self.headerscript = tools_path.find_node('generate_resource_code.py').abspath()
 
 	self.timestamp = self.bld.options.timestamp
 	if self.timestamp == None:
@@ -370,30 +336,11 @@ class genpbpack(Task.Task):
                                                            self.outputs[0].abspath())
                 return self.exec_command(pbpack_string)
 
-@feature('resource_ids_h')
-@before_method('process_resource_ids_h')
-def process_entries(self):
-        genpack = self.bld.get_tgen_by_name(getattr(self, 'use', ''))
-        genpack.post()
-        self.entry_nodes = [e[0] for e in genpack.pack_entries]
-        self.entry_names = [e[1] for e in genpack.pack_entries]
-        self.timestamp = genpack.timestamp
-        self.out_marker = genpack.out_marker
-
-	self.sdk_folder = self.bld.root.find_dir(self.bld.env['PEBBLE_SDK'])
-        tools_path = self.sdk_folder.find_dir('tools')
-        self.headerscript = tools_path.find_node('generate_resource_code.py').abspath()
-
-@feature('resource_ids_h')
+@feature('datapack')
+@after_method('process_packtable')
 def process_resource_ids_h(self):
-        if getattr(self, 'res_ids_path', False):
-                self.resource_id_header_path = getattr(self, 'res_ids_path', '')
-        else:
-                self.resource_id_header_path = 'src/resource_ids.auto.h'
-
-        resource_id_header_node = self.path.find_or_declare(self.resource_id_header_path)
-        data_node = self.path.find_or_declare(self.out_marker + os.sep + 'app_resources.pbpack.data')
-
+        resource_id_header_node = self.path.find_or_declare('src/resource_ids.auto.h')
+        data_node = self.path.find_or_declare('app_resources.pbpack.data')
 	header_tsk = self.create_task('genheader',
                                       [data_node] + self.entry_nodes,
                                       [resource_id_header_node])
@@ -401,39 +348,6 @@ def process_resource_ids_h(self):
         header_tsk.timestamp = self.timestamp
         header_tsk.resource_header_path = getattr(self, 'header_path', '')
         header_tsk.def_names = self.entry_names
-
-@feature('resource_ids_h')
-@after_method('process_resource_ids_h')
-def gen_preproc_pebble_h(self):
-    # Only process if a preproc resource_ids.auto.h have been requested
-    if getattr(self, 'res_ids_path', False):
-        pebble_node = self.sdk_folder.find_node('include/pebble.h')
-        pebble_preproc_node = self.bld.path.find_or_declare('preproc/pebble.h')
-
-        pebble_tsk = self.create_task('preproc_pebble_h',
-                                      [pebble_node],
-                                      [pebble_preproc_node])
-        pebble_tsk.resource_id_header_path = self.resource_id_header_path
-
-class preproc_pebble_h(Task.Task):
-    color = 'CYAN'
-    def run(self):
-            gen_pebble_h(self.inputs[0].abspath(), self.resource_id_header_path,
-                         self.outputs[0].abspath())
-
-def gen_pebble_h(pebble_filename, resource_id_header_path, custom_pebble_filename):
-    pebble = open(pebble_filename ,'r' )
-    custom_pebble = open(custom_pebble_filename ,'w')
-
-    regex = re.compile('.*include.*resource_ids\.auto\.h.*')
-
-    for line in pebble:
-        line.strip()
-        if regex.match(line):
-            custom_pebble.write('#include "{}"'.format(resource_id_header_path))
-        else:
-            custom_pebble.write(line)
-
 
 class genheader(Task.Task):
         color = 'YELLOW'
@@ -453,24 +367,13 @@ class genheader(Task.Task):
 @feature('appinfo_auto_c')
 @before_method('process_source')
 def process_appinfo_c(self):
-        if getattr(self, 'res_ids_path', False):
-                resource_id_header_path = getattr(self, 'res_ids_path', '')
-        else:
-                resource_id_header_path = 'src/resource_ids.auto.h'
-
-        resource_id_header_node = self.path.find_or_declare(resource_id_header_path)
-
+        resource_id_header_node = self.path.find_or_declare('src/resource_ids.auto.h')
         appinfo_json_node = getattr(self, 'appinfo', None)
-
-        out_marker = getattr(self, 'out_marker', '')
-        if out_marker == '':
-                self.appinfo_c_node = appinfo_json_node.change_ext('.auto.c')
-        else:
-                self.appinfo_c_node = appinfo_json_node.change_ext('_{}.auto.c'.format(out_marker))
+        self.appinfo_c_node = appinfo_json_node.change_ext('.auto.c')
         genautoc_tsk = self.create_task('appinfo_c',
                                         [appinfo_json_node],
                                         [self.appinfo_c_node])
-        genautoc_tsk.header_path = resource_id_header_path
+        genautoc_tsk.header_path = 'src/resource_ids.auto.h'
 
 class appinfo_c(Task.Task):
 	color   = 'GREEN'
@@ -500,12 +403,7 @@ def setup_cprogram(self):
 @before_method('process_source')
 def setup_pebble_cprogram(self):
 	sdk_folder=self.bld.root.find_dir(self.bld.env['PEBBLE_SDK'])
-        out_marker = getattr(self, 'out_marker', '')
-        if out_marker == '':
-                append_to_attr(self,'source', [self.path.find_or_declare('appinfo.auto.c')])
-        else:
-                append_to_attr(self,'source', [self.path.find_or_declare('appinfo_{}.auto.c'.format(out_marker))])
-
+        append_to_attr(self,'source', [self.path.find_or_declare('appinfo.auto.c')])
 	append_to_attr(self,'stlibpath',[sdk_folder.find_dir('lib').abspath()])
 	append_to_attr(self,'stlib',['pebble'])
 	append_to_attr(self,'linkflags',['-Wl,-Map,pebble-app.map,--emit-relocs'])
