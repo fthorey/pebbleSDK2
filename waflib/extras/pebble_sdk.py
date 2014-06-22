@@ -37,28 +37,26 @@ def options(opt):
 
 def configure(conf):
 	conf.load('python')
-        arm_path = []
+        arm_path = ''
         try:
                 path = os.path.abspath("{}{}{}{}{}".format(Options.options.pebblesdk, os.sep, 'arm-cs-tools', os.sep, 'bin'))
                 os.stat(path)
-                arm_path.append(path)
+                arm_path = path
         except:
                 if Options.options.armpath != '':
                         try:
                                 path = Options.options.armpath
                                 os.stat(os.path.abspath(path))
-                                arm_path.append(os.path.abspath("{}{}{}".format(path, os.sep, 'bin')))
+                                arm_path = os.path.abspath("{}{}{}".format(path, os.sep, 'bin'))
                         except:
                                 pass
-        if arm_path is not []:
-                os.environ['PATH'] = os.pathsep.join(arm_path) + os.pathsep + os.environ['PATH']
 
-	CROSS_COMPILE_PREFIX='arm-none-eabi-'
-	conf.env.AS=CROSS_COMPILE_PREFIX+'gcc'
-	conf.env.AR=CROSS_COMPILE_PREFIX+'ar'
-	conf.env.CC=CROSS_COMPILE_PREFIX+'gcc'
-	conf.env.LD=CROSS_COMPILE_PREFIX+'ld'
-	conf.env.SIZE=CROSS_COMPILE_PREFIX+'size'
+	CROSS_COMPILE_PREFIX = 'arm-none-eabi-'
+	conf.env.AS   = arm_path + os.sep + CROSS_COMPILE_PREFIX+'gcc'
+	conf.env.AR   = arm_path + os.sep + CROSS_COMPILE_PREFIX+'ar'
+	conf.env.CC   = arm_path + os.sep + CROSS_COMPILE_PREFIX+'gcc'
+	conf.env.LD   = arm_path + os.sep + CROSS_COMPILE_PREFIX+'ld'
+	conf.env.SIZE = arm_path + os.sep + CROSS_COMPILE_PREFIX+'size'
 
 	optimize_flag='-Os'
 	conf.load('gcc')
