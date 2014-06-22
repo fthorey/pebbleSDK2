@@ -404,6 +404,39 @@ def process_resource_ids_h(self):
         header_tsk.resource_header_path = getattr(self, 'header_path', '')
         header_tsk.def_names = self.entry_names
 
+@feature('resource_ids_h')
+@after_method('process_resource_ids_h')
+def gen_preproc_pebble_h(self):
+    # Only process if a preproc resource_ids.auto.h have been requested
+    if getattr(self, 'res_ids_path', False):
+        pebble_node = self.sdk_folder.find_node('include/pebble.h')
+        pebble_preproc_node = self.bld.path.find_or_declare('preproc/pebble.h')
+
+        pebble_tsk = self.create_task('preproc_pebble_h',
+                                      [pebble_node],
+                                      [pebble_preproc_node])
+        pebble_tsk.resource_id_header_path = self.resource_id_header_path
+
+class preproc_pebble_h(Task.Task):
+    color = 'CYAN'
+    def run(self):
+            gen_pebble_h(self.inputs[0].abspath(), self.resource_id_header_path,
+                         self.outputs[0].abspath())
+
+def gen_pebble_h(pebble_filename, resource_id_header_path, custom_pebble_filename):
+    pebble = open(pebble_filename ,'r' )
+    custom_pebble = open(custom_pebble_filename ,'w')
+
+    regex = re.compile('.*include.*resource_ids\.auto\.h.*')
+
+    for line in pebble:
+        line.strip()
+        if regex.match(line):
+            custom_pebble.write('#include "{}"'.format(resource_id_header_path))
+        else:
+            custom_pebble.write(line)
+
+
 class genheader(Task.Task):
         color = 'YELLOW'
         ext_out = ['.h']
