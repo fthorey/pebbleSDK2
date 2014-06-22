@@ -93,8 +93,9 @@ def configure(conf):
 	for n in sdk_check_nodes:
 		if pebble_sdk.find_node(n) is None:
                         conf.fatal("Invalid SDK - Could not find {}".format(n))
-	print"Found Pebble SDK in\t\t\t : {}".format(pebble_sdk.abspath())
-	conf.env.PEBBLE_SDK=pebble_sdk.abspath()
+
+        conf.msg('Checking for Pebble SDK', '{}'.format(pebble_sdk.abspath()))
+	conf.env.PEBBLE_SDK = pebble_sdk.abspath()
 
 def build(bld):
         # Don't know if useful or not...
