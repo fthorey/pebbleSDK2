@@ -515,21 +515,29 @@ def setup_pebble_cprogram(self):
                 setattr(self,'ldscript',sdk_folder.find_node('pebble_app.ld').path_from(self.bld.path))
 
 @feature('pbl_bundle')
-def make_pbl_bundle(self):
-	timestamp=self.bld.options.timestamp
-	pbw_basename='app_'+str(timestamp) if timestamp else self.bld.path.name
+def init_pbl_bundle(self):
+        self.timestamp = self.bld.options.timestamp
+	if self.timestamp is None:
+		self.timestamp = int(time.time())
 
-	if timestamp is None:
-		timestamp=int(time.time())
+        self.pbw_basename = 'app_'+str(self.timestamp) if self.timestamp else self.bld.path.name
 
-	elf_file_node = self.bld.path.find_or_declare(getattr(self,'elf'))
-	if elf_file_node is None:
+	self.elf_file_node = self.bld.path.find_or_declare(getattr(self,'elf'))
+	if self.elf_file_node is None:
 		raise Exception("Must specify elf argument to pbl_bundle")
 
-	raw_bin_file_node = self.path.find_or_declare('pebble-app.raw.bin')
+        self.raw_bin_file_node = self.path.find_or_declare('pebble-app.raw.bin')
 
-	self.bld(rule = objcopy.objcopy_bin, source = elf_file_node, target = raw_bin_file_node)
+@feature('pbl_bundle')
+@after_method('init_pbl_bundle')
+def make_raw_bin_file(self):
+	self.bld(rule = objcopy.objcopy_bin,
+                 source = self.elf_file_node,
+                 target = self.raw_bin_file_node)
 
+@feature('pbl_bundle')
+@after_method('make_raw_bin_file')
+def make_pbl_bundle(self):
 	js_nodes = self.to_nodes(getattr(self,'js',[]))
 	js_files=[x.abspath() for x in js_nodes]
 	has_jsapp = len(js_nodes) > 0
@@ -543,17 +551,17 @@ def make_pbl_bundle(self):
 		if cp_result<0:
 			from waflib.Errors import BuildError
 			raise BuildError("Failed to copy %s to %s!"%(bin_path,tgt_path))
-		inject_metadata.inject_metadata(tgt_path,elf_path,res_path,timestamp,allow_js=has_jsapp)
+		inject_metadata.inject_metadata(tgt_path,elf_path,res_path,self.timestamp,allow_js=has_jsapp)
 
 	resources_file_node = self.path.find_or_declare('app_resources.pbpack.data')
 	bin_file_node = self.path.find_or_declare('pebble-app.bin')
 
 	self.bld(rule = inject_data_rule,name='inject-metadata',
-                 source = [raw_bin_file_node , elf_file_node, resources_file_node],
+                 source = [self.raw_bin_file_node , self.elf_file_node, resources_file_node],
                  target = bin_file_node)
 
 	resources_pack_node = self.path.find_or_declare('app_resources.pbpack')
-	pbz_output_node = self.bld.path.find_or_declare(pbw_basename + '.pbw')
+	pbz_output_node = self.bld.path.find_or_declare(self.pbw_basename + '.pbw')
 
 	def make_watchapp_bundle(task):
 		watchapp=task.inputs[0].abspath()
@@ -563,10 +571,10 @@ def make_pbl_bundle(self):
                         appinfo = self.bld.path.get_src().find_node('appinfo.json').abspath(),
                         js_files = js_files,
                         watchapp = watchapp,
-                        watchapp_timestamp = timestamp,
+                        watchapp_timestamp = self.timestamp,
                         sdk_version = SDK_VERSION,
                         resources = resources,
-                        resources_timestamp = timestamp,
+                        resources_timestamp = self.timestamp,
                         outfile = outfile)
 
         self.bld(rule = make_watchapp_bundle,
@@ -586,7 +594,7 @@ def make_pbl_bundle(self):
 
 	self.bld(rule = report_memory_usage,
                  name = 'report-memory-usage',
-                 source = [elf_file_node],
+                 source = [self.elf_file_node],
                  target=None)
 
 from waflib.Configure import conf
