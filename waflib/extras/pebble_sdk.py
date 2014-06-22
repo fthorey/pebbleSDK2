@@ -163,7 +163,7 @@ def init_appinfo_res(self):
                 input_file=str(res["file"])
                 input_node = resources_node.find_node(input_file)
                 if input_node is None:
-                        tg.fatal("Could not find {} resource <{}>"
+                        self.bld.fatal("Could not find {} resource <{}>"
                                  .format(res_type,input_file))
                 else:
                         if res_type == 'raw':
