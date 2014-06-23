@@ -37,7 +37,6 @@ def options(opt):
 
 def configure(conf):
 	conf.load('python')
-
         arm_path = ''
         try:
                 path = os.path.abspath("{}{}{}{}{}".format(Options.options.pebblesdk, os.sep, 'arm-cs-tools', os.sep, 'bin'))
@@ -53,23 +52,31 @@ def configure(conf):
                                 pass
 
 	CROSS_COMPILE_PREFIX = 'arm-none-eabi-'
-	conf.env.AS   = arm_path + os.sep + CROSS_COMPILE_PREFIX+'gcc'
-	conf.env.AR   = arm_path + os.sep + CROSS_COMPILE_PREFIX+'ar'
-	conf.env.CC   = arm_path + os.sep + CROSS_COMPILE_PREFIX+'gcc'
-	conf.env.LD   = arm_path + os.sep + CROSS_COMPILE_PREFIX+'ld'
-	conf.env.SIZE = arm_path + os.sep + CROSS_COMPILE_PREFIX+'size'
+
+        if arm_path != '':
+                conf.env.AS   = arm_path + os.sep + CROSS_COMPILE_PREFIX+'gcc'
+                conf.env.AR   = arm_path + os.sep + CROSS_COMPILE_PREFIX+'ar'
+                conf.env.CC   = arm_path + os.sep + CROSS_COMPILE_PREFIX+'gcc'
+                conf.env.LD   = arm_path + os.sep + CROSS_COMPILE_PREFIX+'ld'
+                conf.env.SIZE = arm_path + os.sep + CROSS_COMPILE_PREFIX+'size'
+        else:
+                conf.env.AS   = CROSS_COMPILE_PREFIX+'gcc'
+                conf.env.AR   = CROSS_COMPILE_PREFIX+'ar'
+                conf.env.CC   = CROSS_COMPILE_PREFIX+'gcc'
+                conf.env.LD   = CROSS_COMPILE_PREFIX+'ld'
+                conf.env.SIZE = CROSS_COMPILE_PREFIX+'size'
 
 	conf.load('gcc')
 
-	optimize_flag = '-Os'
-	conf.env.CFLAGS = ['-std=c99','-mcpu=cortex-m3','-mthumb','-ffunction-sections','-fdata-sections','-g',optimize_flag]
+	optimize_flag='-Os'
+	conf.env.CFLAGS=['-std=c99','-mcpu=cortex-m3','-mthumb','-ffunction-sections','-fdata-sections','-g',optimize_flag]
 
-	c_warnings = ['-Wall','-Wextra','-Werror','-Wno-unused-parameter','-Wno-error=unused-function','-Wno-error=unused-variable']
-
+	c_warnings=['-Wall','-Wextra','-Werror','-Wno-unused-parameter','-Wno-error=unused-function','-Wno-error=unused-variable']
 	conf.env.append_value('CFLAGS',c_warnings)
-	conf.env.LINKFLAGS = ['-mcpu=cortex-m3','-mthumb','-Wl,--gc-sections','-Wl,--warn-common',optimize_flag]
-	conf.env.SHLIB_MARKER = None
-	conf.env.STLIB_MARKER = None
+
+	conf.env.LINKFLAGS=['-mcpu=cortex-m3','-mthumb','-Wl,--gc-sections','-Wl,--warn-common',optimize_flag]
+	conf.env.SHLIB_MARKER=None
+	conf.env.STLIB_MARKER=None
 
 	if not conf.options.debug:
 		conf.env.append_value('DEFINES','RELEASE')
@@ -111,8 +118,8 @@ def build(bld):
 
         bld(features      = 'datapack',
             name          = 'gen_datapack',
-            header_path    = 'pebble.h',
-            resource_dep  = ['gen_appinfo_res'])
+            header_path   = 'pebble.h',
+            use           = 'gen_appinfo_res')
 
         bld(features       = 'appinfo_auto_c',
             name           = 'gen_appinfo_auto_c',
@@ -167,7 +174,7 @@ def init_appinfo_res(self):
                 input_node = resources_node.find_node(input_file)
                 if input_node is None:
                         self.bld.fatal("Could not find {} resource <{}>"
-                                 .format(res_type,input_file))
+                                       .format(res_type,input_file))
                 else:
                         if res_type == 'raw':
                                 self.raw_nodes.append((input_node, def_name))
@@ -193,12 +200,12 @@ def init_appinfo_res(self):
                                 else:
                                         trackingAdjustArg = ''
                                 self.fonts[def_name]['tracking'] = trackingAdjustArg
+                                # FIXME
+                                # if 'characterRegex'in res:
+                                #         characterRegexArg='--filter \\"%s\\"'%(res['characterRegex'].encode('utf8'))
 
-                                if 'characterRegex'in res:
-                                        characterRegexArg='--filter "%s"'%(res['characterRegex'].encode('utf8'))
-
-                                else:
-                                        characterRegexArg = ''
+                                # else:
+                                characterRegexArg = ''
                                 self.fonts[def_name]['regex'] = characterRegexArg
 
 @feature('appinfo_res')
@@ -207,24 +214,22 @@ def process_bpi(self):
         for input_node, def_name in self.png_nodes:
                 output_node = input_node.change_ext('.png.pbi')
                 self.pack_entries.append((output_node, def_name))
-                pbi_tsk = self.create_task('genpbi',
-                                           [input_node],
-                                           [output_node])
-                pbi_tsk.resources = self.resources
-                pbi_tsk.env.append_value('BITMAPSCRIPT', [self.bitmapscript])
+                if not getattr(self, 'dry_run', False):
+                        pbi_tsk = self.create_task('genpbi', [input_node], [output_node])
+                        pbi_tsk.resources = self.resources
+                        pbi_tsk.env.append_value('BITMAPSCRIPT', [self.bitmapscript])
 
 @feature('appinfo_res')
 @after_method('process_pbi')
 def process_trans_bpi(self):
         for input_node, def_name in self.png_trans_nodes:
                 for color in ['white', 'black']:
-                        output_node = input_node.change_ext(".png.{}.pbi".format(color))
+                        output_node = input_node.change_ext('.png.{}.pbi'.format(color))
                         self.pack_entries.append((output_node,"{}_{}".format(def_name, color.upper())))
-                        pbi_tsk = self.create_task('genpbi',
-                                                   [input_node],
-                                                   [output_node])
-                        pbi_tsk.resources = self.resources
-                        pbi_tsk.env.append_value('BITMAPSCRIPT', [self.bitmapscript])
+                        if not getattr(self, 'dry_run', False):
+                                pbi_tsk = self.create_task('genpbi', [input_node], [output_node])
+                                pbi_tsk.resources = self.resources
+                                pbi_tsk.env.append_value('BITMAPSCRIPT', [self.bitmapscript])
 
 class genpbi(resources):
         color = 'BLUE'
@@ -236,59 +241,31 @@ def process_font(self):
         for input_node, def_name in self.font_nodes:
                 output_node = input_node.change_ext('.' + str(def_name) + '.pfo')
                 self.pack_entries.append((output_node, def_name))
+                if not getattr(self, 'dry_run', False):
+                        font_tsk = self.create_task('genpfo', [input_node], [output_node])
+                        font_tsk.resources = self.resources
+                        font_tsk.env.append_value('FONTSCRIPT', [self.fontscript])
+                        font_tsk.env.append_value('FONTHEIGHT', [str(self.fonts[def_name]['height'])])
+                        font_tsk.env.append_value('TRACKARG', [self.fonts[def_name]['tracking']])
+                        font_tsk.env.append_value('REGEX', [self.fonts[def_name]['regex']])
 
-                self.bld(rule="python '{}' pfo {} {} {} '{}' '{}'"
-                         .format(self.fontscript,self.fonts[def_name]['height'],
-                                 self.fonts[def_name]['tracking'],
-                                 self.fonts[def_name]['regex'],
-                                 input_node.abspath(),
-                                 output_node.abspath()),
-                         source = input_node, target = output_node)
-
-@feature('appinfo_res')
-@after_method('process_font')
-def process_font_key(self):
-        font_key_header_node = getattr(self, 'font_key_header', None)
-        font_key_table_node = getattr(self, 'font_key_table', None)
-        font_key_include_path = getattr(self, 'font_key_include', None)
-
-	if font_key_header_node and font_key_table_node and font_key_include_path:
-
-		key_list_string=" ".join(self.fonts.keys())
-
-		bld(rule = "python '{script}' font_key_header '{font_key_header}' ""{key_list}"
-                    .format(script = resource_code_script.abspath(),
-                            font_key_header = font_key_header_node.abspath(),
-                            key_list = key_list_string),
-                    source = resource_code_script,
-                    target = font_key_header_node)
-
-		bld(rule = "python '{script}' font_key_table '{font_key_table}' "" '{resource_id_header}' '{font_key_header}' {key_list}"
-                    .format(script = resource_code_script.abspath(),
-                            font_key_table = font_key_table_node.abspath(),
-                            resource_id_header = output_id_header_node.abspath(),
-                            font_key_header = font_key_include_path,
-                            key_list = key_list_string),
-                    source = resource_code_script,
-                    target = font_key_table_node)
+class genpfo(resources):
+	color = 'BLUE'
+	run_str = "${PYTHON} ${FONTSCRIPT} pfo ${FONTHEIGHT} ${TRACKARG} ${REGEX} ${SRC} ${TGT}"
 
 @feature('appinfo_res')
-@after_method('process_font_key')
+@after_method('process_trans_pbi')
 def process_raw(self):
         for input_node, def_name in self.raw_nodes:
                 self.pack_entries.append((input_node, def_name))
 
 @feature('datapack')
 def init_datapack(self):
-        entries = []
-        for x in self.to_list(getattr(self, 'resource_dep', [])):
-                y = self.bld.get_tgen_by_name(x)
-                y.post()
-                if getattr(y, 'pack_entries', None):
-                        entries += y.pack_entries
-
-        self.entry_nodes = [e[0] for e in entries]
-        self.entry_names = [e[1] for e in entries]
+        y = self.bld.get_tgen_by_name(getattr(self, 'use', []))
+        y.post()
+        self.pack_entries = y.pack_entries
+        self.entry_nodes = [e[0] for e in self.pack_entries]
+        self.entry_names = [e[1] for e in self.pack_entries]
 
         self.output_pack_node = self.path.find_or_declare('app_resources.pbpack')
 
@@ -366,8 +343,10 @@ def process_pbpack(self):
 class genpbpack(Task.Task):
         color = 'BLUE'
         def run(self):
-                pbpack_string = 'cat {} {} {} > {}'.format(self.inputs[0], self.inputs[1],
-                                                           self.inputs[2], self.outputs[0])
+                pbpack_string = 'cat {} {} {} > {}'.format(self.inputs[0].abspath(),
+                                                           self.inputs[1].abspath(),
+                                                           self.inputs[2].abspath(),
+                                                           self.outputs[0].abspath())
                 return self.exec_command(pbpack_string)
 
 @feature('datapack')
@@ -384,7 +363,7 @@ def process_appinfo_h(self):
         header_tsk.def_names = self.entry_names
 
 class genheader(Task.Task):
-        color = 'BLUE'
+        color = 'YELLOW'
         ext_out = ['.h']
 
         def run(self):
@@ -441,21 +420,29 @@ def setup_pebble_cprogram(self):
                 setattr(self,'ldscript',sdk_folder.find_node('pebble_app.ld').path_from(self.bld.path))
 
 @feature('pbl_bundle')
-def make_pbl_bundle(self):
-	timestamp=self.bld.options.timestamp
-	pbw_basename='app_'+str(timestamp) if timestamp else self.bld.path.name
+def init_pbl_bundle(self):
+        self.timestamp = self.bld.options.timestamp
+	if self.timestamp is None:
+		self.timestamp = int(time.time())
 
-	if timestamp is None:
-		timestamp=int(time.time())
+        self.pbw_basename = 'app_'+str(self.timestamp) if self.timestamp else self.bld.path.name
 
-	elf_file_node = self.bld.path.find_or_declare(getattr(self,'elf'))
-	if elf_file_node is None:
+	self.elf_file_node = self.bld.path.find_or_declare(getattr(self,'elf'))
+	if self.elf_file_node is None:
 		raise Exception("Must specify elf argument to pbl_bundle")
 
-	raw_bin_file_node = self.path.find_or_declare('pebble-app.raw.bin')
+        self.raw_bin_file_node = self.path.find_or_declare('pebble-app.raw.bin')
 
-	self.bld(rule = objcopy.objcopy_bin, source = elf_file_node, target = raw_bin_file_node)
+@feature('pbl_bundle')
+@after_method('init_pbl_bundle')
+def make_raw_bin_file(self):
+	self.bld(rule = objcopy.objcopy_bin,
+                 source = self.elf_file_node,
+                 target = self.raw_bin_file_node)
 
+@feature('pbl_bundle')
+@after_method('make_raw_bin_file')
+def make_pbl_bundle(self):
 	js_nodes = self.to_nodes(getattr(self,'js',[]))
 	js_files=[x.abspath() for x in js_nodes]
 	has_jsapp = len(js_nodes) > 0
@@ -469,17 +456,17 @@ def make_pbl_bundle(self):
 		if cp_result<0:
 			from waflib.Errors import BuildError
 			raise BuildError("Failed to copy %s to %s!"%(bin_path,tgt_path))
-		inject_metadata.inject_metadata(tgt_path,elf_path,res_path,timestamp,allow_js=has_jsapp)
+		inject_metadata.inject_metadata(tgt_path,elf_path,res_path,self.timestamp,allow_js=has_jsapp)
 
 	resources_file_node = self.path.find_or_declare('app_resources.pbpack.data')
 	bin_file_node = self.path.find_or_declare('pebble-app.bin')
 
 	self.bld(rule = inject_data_rule,name='inject-metadata',
-                 source = [raw_bin_file_node , elf_file_node, resources_file_node],
+                 source = [self.raw_bin_file_node , self.elf_file_node, resources_file_node],
                  target = bin_file_node)
 
 	resources_pack_node = self.path.find_or_declare('app_resources.pbpack')
-	pbz_output_node = self.bld.path.find_or_declare(pbw_basename + '.pbw')
+	pbz_output_node = self.bld.path.find_or_declare(self.pbw_basename + '.pbw')
 
 	def make_watchapp_bundle(task):
 		watchapp=task.inputs[0].abspath()
@@ -489,10 +476,10 @@ def make_pbl_bundle(self):
                         appinfo = self.bld.path.get_src().find_node('appinfo.json').abspath(),
                         js_files = js_files,
                         watchapp = watchapp,
-                        watchapp_timestamp = timestamp,
+                        watchapp_timestamp = self.timestamp,
                         sdk_version = SDK_VERSION,
                         resources = resources,
-                        resources_timestamp = timestamp,
+                        resources_timestamp = self.timestamp,
                         outfile = outfile)
 
         self.bld(rule = make_watchapp_bundle,
@@ -512,7 +499,7 @@ def make_pbl_bundle(self):
 
 	self.bld(rule = report_memory_usage,
                  name = 'report-memory-usage',
-                 source = [elf_file_node],
+                 source = [self.elf_file_node],
                  target=None)
 
 from waflib.Configure import conf
