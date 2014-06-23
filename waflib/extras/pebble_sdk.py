@@ -194,18 +194,18 @@ def init_appinfo_res(self):
                                         height = int(m.group(0))
                                 self.fonts[def_name]['height'] = height
 
+                                trackingAdjustArg = ''
                                 if 'trackingAdjust'in res:
-                                        trackingAdjustArg = '--tracking %i'%res['trackingAdjust']
+                                        trackingAdjustArg = '--tracking {}'.format(
+                                                res['trackingAdjust'])
 
-                                else:
-                                        trackingAdjustArg = ''
                                 self.fonts[def_name]['tracking'] = trackingAdjustArg
-                                # FIXME
-                                # if 'characterRegex'in res:
-                                #         characterRegexArg='--filter \\"%s\\"'%(res['characterRegex'].encode('utf8'))
 
-                                # else:
                                 characterRegexArg = ''
+                                if 'characterRegex'in res:
+                                        characterRegexArg = '--filter "{}"'.format(
+                                                res['characterRegex'].encode('utf8'))
+
                                 self.fonts[def_name]['regex'] = characterRegexArg
 
 @feature('appinfo_res')
@@ -239,19 +239,27 @@ class genpbi(resources):
 @after_method('process_trans_pbi')
 def process_font(self):
         for input_node, def_name in self.font_nodes:
-                output_node = input_node.change_ext('.' + str(def_name) + '.pfo')
+                output_node = input_node.change_ext('.ttf.' + str(def_name) + '.pfo')
                 self.pack_entries.append((output_node, def_name))
                 if not getattr(self, 'dry_run', False):
                         font_tsk = self.create_task('genpfo', [input_node], [output_node])
                         font_tsk.resources = self.resources
-                        font_tsk.env.append_value('FONTSCRIPT', [self.fontscript])
-                        font_tsk.env.append_value('FONTHEIGHT', [str(self.fonts[def_name]['height'])])
-                        font_tsk.env.append_value('TRACKARG', [self.fonts[def_name]['tracking']])
-                        font_tsk.env.append_value('REGEX', [self.fonts[def_name]['regex']])
+                        font_tsk.fontscript = self.fontscript
+                        font_tsk.fontheight = str(self.fonts[def_name]['height'])
+                        font_tsk.trackarg = self.fonts[def_name]['tracking']
+                        font_tsk.regex = self.fonts[def_name]['regex']
 
 class genpfo(resources):
 	color = 'BLUE'
-	run_str = "${PYTHON} ${FONTSCRIPT} pfo ${FONTHEIGHT} ${TRACKARG} ${REGEX} ${SRC} ${TGT}"
+        def run(self):
+                return self.exec_command("{} '{}' pfo {} {} {} '{}' '{}'".format(
+                        self.env.PYTHON[0],
+                        self.fontscript,
+                        self.fontheight,
+                        self.trackarg,
+                        self.regex,
+                        self.inputs[0].abspath(),
+                        self.outputs[0].abspath()))
 
 @feature('appinfo_res')
 @after_method('process_trans_pbi')
@@ -294,7 +302,6 @@ class touch(Task.Task):
 
 class genpackdata(Task.Task):
         color = 'BLUE'
-
         def run(self):
                 cat_string="cat"
                 for entry in self.inputs:
