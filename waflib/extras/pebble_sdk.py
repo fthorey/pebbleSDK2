@@ -52,11 +52,20 @@ def configure(conf):
                                 pass
 
 	CROSS_COMPILE_PREFIX = 'arm-none-eabi-'
-	conf.env.AS   = arm_path + os.sep + CROSS_COMPILE_PREFIX+'gcc'
-	conf.env.AR   = arm_path + os.sep + CROSS_COMPILE_PREFIX+'ar'
-	conf.env.CC   = arm_path + os.sep + CROSS_COMPILE_PREFIX+'gcc'
-	conf.env.LD   = arm_path + os.sep + CROSS_COMPILE_PREFIX+'ld'
-	conf.env.SIZE = arm_path + os.sep + CROSS_COMPILE_PREFIX+'size'
+
+        if arm_path != '':
+                conf.env.AS   = arm_path + os.sep + CROSS_COMPILE_PREFIX+'gcc'
+                conf.env.AR   = arm_path + os.sep + CROSS_COMPILE_PREFIX+'ar'
+                conf.env.CC   = arm_path + os.sep + CROSS_COMPILE_PREFIX+'gcc'
+                conf.env.LD   = arm_path + os.sep + CROSS_COMPILE_PREFIX+'ld'
+                conf.env.SIZE = arm_path + os.sep + CROSS_COMPILE_PREFIX+'size'
+        else:
+                conf.env.AS   = CROSS_COMPILE_PREFIX+'gcc'
+		conf.env.AR   = CROSS_COMPILE_PREFIX+'ar'
+		conf.env.CC   = CROSS_COMPILE_PREFIX+'gcc'
+		conf.env.LD   = CROSS_COMPILE_PREFIX+'ld'
+		conf.env.SIZE = CROSS_COMPILE_PREFIX+'size'
+
 
 	optimize_flag='-Os'
 	conf.load('gcc')
