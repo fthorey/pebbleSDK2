@@ -54,17 +54,19 @@ def configure(conf):
 	CROSS_COMPILE_PREFIX = 'arm-none-eabi-'
 
         if arm_path != '':
-                conf.env.AS   = arm_path + os.sep + CROSS_COMPILE_PREFIX+'gcc'
-                conf.env.AR   = arm_path + os.sep + CROSS_COMPILE_PREFIX+'ar'
-                conf.env.CC   = arm_path + os.sep + CROSS_COMPILE_PREFIX+'gcc'
-                conf.env.LD   = arm_path + os.sep + CROSS_COMPILE_PREFIX+'ld'
-                conf.env.SIZE = arm_path + os.sep + CROSS_COMPILE_PREFIX+'size'
+                conf.env.AS     = arm_path + os.sep + CROSS_COMPILE_PREFIX+'gcc'
+                conf.env.AR     = arm_path + os.sep + CROSS_COMPILE_PREFIX+'ar'
+                conf.env.CC     = arm_path + os.sep + CROSS_COMPILE_PREFIX+'gcc'
+                conf.env.LD     = arm_path + os.sep + CROSS_COMPILE_PREFIX+'ld'
+                conf.env.SIZE   = arm_path + os.sep + CROSS_COMPILE_PREFIX+'size'
+                conf.env.OBJCPY = arm_path + os.sep + CROSS_COMPILE_PREFIX+'objcopy'
         else:
-                conf.env.AS   = CROSS_COMPILE_PREFIX+'gcc'
-                conf.env.AR   = CROSS_COMPILE_PREFIX+'ar'
-                conf.env.CC   = CROSS_COMPILE_PREFIX+'gcc'
-                conf.env.LD   = CROSS_COMPILE_PREFIX+'ld'
-                conf.env.SIZE = CROSS_COMPILE_PREFIX+'size'
+                conf.env.AS     = CROSS_COMPILE_PREFIX+'gcc'
+                conf.env.AR     = CROSS_COMPILE_PREFIX+'ar'
+                conf.env.CC     = CROSS_COMPILE_PREFIX+'gcc'
+                conf.env.LD     = CROSS_COMPILE_PREFIX+'ld'
+                conf.env.SIZE   = CROSS_COMPILE_PREFIX+'size'
+                conf.env.OBJCPY = CROSS_COMPILE_PREFIX+'objcopy'
 
 	conf.load('gcc')
 
@@ -442,10 +444,7 @@ def make_raw_bin_file(self):
 
 class genrawbin(Task.Task):
         color = 'YELLOW'
-
-        def run(self):
-                objcopy.objcopy_bin(self.intputs[0].abspath(),
-                                    self.outputs[0].abspath())
+        run_str = "${OBJCPY} -S -R .stack -R .priv_bss -R .bss -O binary ${SRC} ${TGT}"
 
 @feature('pbl_bundle')
 @after_method('make_raw_bin_file')
@@ -454,16 +453,16 @@ def inject_medatada(self):
 	has_jsapp = len(self.js_nodes) > 0
 
 	resources_file_node = self.path.find_or_declare('app_resources.pbpack.data')
-	bin_file_node = self.path.find_or_declare('pebble-app.bin')
+	self.bin_file_node = self.path.find_or_declare('pebble-app.bin')
 
         meta_tsk = self.create_task('injectdata',
                                     [self.raw_bin_file_node,
                                      self.elf_file_node,
                                      resources_file_node],
-                                    [bin_file_node])
+                                    [self.bin_file_node])
 
         meta_tsk.timestamp = self.timestamp
-        meta_tsk.allow_js = self.has_jsapp
+        meta_tsk.allow_js = has_jsapp
 
 class injectdata(Task.Task):
         color = 'YELLOW'
@@ -479,7 +478,7 @@ class injectdata(Task.Task):
                                                 self.inputs[1].abspath(),
                                                 self.inputs[2].abspath(),
                                                 self.timestamp,
-                                                allow_js = self.has_jsapp)
+                                                allow_js = self.allow_js)
 
 @feature('pbl_bundle')
 @after_method('inject_medatadata')
@@ -488,12 +487,10 @@ def create_watchapp_bundle(self):
 	pbz_output_node = self.bld.path.find_or_declare(self.pbw_basename + '.pbw')
         json_node = self.bld.path.find_node('appinfo.json')
 
-        wachtapp_tsk = self.create_task('watchapp',
+        watchapp_tsk = self.create_task('watchapp',
                                         [self.bin_file_node, resources_pack_node, json_node] + self.js_nodes,
                                         [pbz_output_node])
         watchapp_tsk.timestamp = self.timestamp
-
-	js_files=[x.abspath() for x in js_nodes]
 
 class watchapp(Task.Task):
         color = 'BLUE'
@@ -507,7 +504,7 @@ class watchapp(Task.Task):
                         sdk_version = SDK_VERSION,
                         resources = self.inputs[1].abspath(),
                         resources_timestamp = self.timestamp,
-                        outfile = self.ouputs[0].abspath())
+                        outfile = self.outputs[0].abspath())
 
 @feature('pbl_bundle')
 @after_method('create_watchapp_bundle')
@@ -515,7 +512,7 @@ def measure_memory_usage(self):
         self.create_task('reportmemory', [self.elf_file_node], [])
 
 class reportmemory(Task.Task):
-        color = 'BLUE'
+        color = 'YELLOW'
 
         def run(self):
 		src_path = self.inputs[0].abspath()
