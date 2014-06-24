@@ -253,13 +253,8 @@ class genpfo(resources):
 	color = 'BLUE'
         def run(self):
                 return self.exec_command("{} '{}' pfo {} {} {} '{}' '{}'".format(
-                        self.env.PYTHON[0],
-                        self.fontscript,
-                        self.fontheight,
-                        self.trackarg,
-                        self.regex,
-                        self.inputs[0].abspath(),
-                        self.outputs[0].abspath()))
+                        self.env.PYTHON[0], self.fontscript, self.fontheight, self.trackarg,
+                        self.regex, self.inputs[0].abspath(), self.outputs[0].abspath()))
 
 @feature('appinfo_res')
 @after_method('process_trans_pbi')
@@ -443,71 +438,96 @@ def init_pbl_bundle(self):
 @feature('pbl_bundle')
 @after_method('init_pbl_bundle')
 def make_raw_bin_file(self):
-	self.bld(rule = objcopy.objcopy_bin,
-                 source = self.elf_file_node,
-                 target = self.raw_bin_file_node)
+        genraw_tsk = self.create_task('genrawbin', [self.elf_file_node], [self.raw_bin_file_node])
+
+class genrawbin(Task.Task):
+        color = 'YELLOW'
+
+        def run(self):
+                objcopy.objcopy_bin(self.intputs[0].abspath(),
+                                    self.outputs[0].abspath())
 
 @feature('pbl_bundle')
 @after_method('make_raw_bin_file')
-def make_pbl_bundle(self):
-	js_nodes = self.to_nodes(getattr(self,'js',[]))
-	js_files=[x.abspath() for x in js_nodes]
-	has_jsapp = len(js_nodes) > 0
-
-	def inject_data_rule(task):
-		bin_path=task.inputs[0].abspath()
-		elf_path=task.inputs[1].abspath()
-		res_path=task.inputs[2].abspath()
-		tgt_path=task.outputs[0].abspath()
-		cp_result=task.exec_command('cp "{}" "{}"'.format(bin_path,tgt_path))
-		if cp_result<0:
-			from waflib.Errors import BuildError
-			raise BuildError("Failed to copy %s to %s!"%(bin_path,tgt_path))
-		inject_metadata.inject_metadata(tgt_path,elf_path,res_path,self.timestamp,allow_js=has_jsapp)
+def inject_medatada(self):
+	self.js_nodes = self.to_nodes(getattr(self,'js',[]))
+	has_jsapp = len(self.js_nodes) > 0
 
 	resources_file_node = self.path.find_or_declare('app_resources.pbpack.data')
 	bin_file_node = self.path.find_or_declare('pebble-app.bin')
 
-	self.bld(rule = inject_data_rule,name='inject-metadata',
-                 source = [self.raw_bin_file_node , self.elf_file_node, resources_file_node],
-                 target = bin_file_node)
+        meta_tsk = self.create_task('injectdata',
+                                    [self.raw_bin_file_node,
+                                     self.elf_file_node,
+                                     resources_file_node],
+                                    [bin_file_node])
 
+        meta_tsk.timestamp = self.timestamp
+        meta_tsk.allow_js = self.has_jsapp
+
+class injectdata(Task.Task):
+        color = 'YELLOW'
+
+        def run(self):
+		cp_result = self.exec_command('cp "{}" "{}"'.format(self.inputs[0].abspath(),
+                                                                    self.outputs[0].abspath()))
+		if cp_result < 0:
+			from waflib.Errors import BuildError
+			raise BuildError("Failed to copy {} to {}!".format(bin_path,tgt_path))
+
+                inject_metadata.inject_metadata(self.outputs[0].abspath(),
+                                                self.inputs[1].abspath(),
+                                                self.inputs[2].abspath(),
+                                                self.timestamp,
+                                                allow_js = self.has_jsapp)
+
+@feature('pbl_bundle')
+@after_method('inject_medatadata')
+def create_watchapp_bundle(self):
 	resources_pack_node = self.path.find_or_declare('app_resources.pbpack')
 	pbz_output_node = self.bld.path.find_or_declare(self.pbw_basename + '.pbw')
+        json_node = self.bld.path.find_node('appinfo.json')
 
-	def make_watchapp_bundle(task):
-		watchapp=task.inputs[0].abspath()
-		resources=task.inputs[1].abspath()
-		outfile=task.outputs[0].abspath()
+        wachtapp_tsk = self.create_task('watchapp',
+                                        [self.bin_file_node, resources_pack_node, json_node] + self.js_nodes,
+                                        [pbz_output_node])
+        watchapp_tsk.timestamp = self.timestamp
+
+	js_files=[x.abspath() for x in js_nodes]
+
+class watchapp(Task.Task):
+        color = 'BLUE'
+
+        def run(self):
 		return mkbundle.make_watchapp_bundle(
-                        appinfo = self.bld.path.get_src().find_node('appinfo.json').abspath(),
-                        js_files = js_files,
-                        watchapp = watchapp,
+                        appinfo = self.inputs[2].abspath(),
+                        js_files = [n.abspath() for n in self.inputs[3:]],
+                        watchapp = self.inputs[0].abspath(),
                         watchapp_timestamp = self.timestamp,
                         sdk_version = SDK_VERSION,
-                        resources = resources,
+                        resources = self.inputs[1].abspath(),
                         resources_timestamp = self.timestamp,
-                        outfile = outfile)
+                        outfile = self.ouputs[0].abspath())
 
-        self.bld(rule = make_watchapp_bundle,
-                 source= [bin_file_node , resources_pack_node] + js_nodes,
-                 target = pbz_output_node)
+@feature('pbl_bundle')
+@after_method('create_watchapp_bundle')
+def measure_memory_usage(self):
+        self.create_task('reportmemory', [self.elf_file_node], [])
 
-	def report_memory_usage(task):
-		src_path = task.inputs[0].abspath()
-		size_output = task.generator.bld.cmd_and_log([task.env.SIZE,src_path],
+class reportmemory(Task.Task):
+        color = 'BLUE'
+
+        def run(self):
+		src_path = self.inputs[0].abspath()
+		size_output = self.generator.bld.cmd_and_log([self.env.SIZE,src_path],
                                                              quiet = waflib.Context.BOTH,
                                                              output = waflib.Context.STDOUT)
-		text_size, data_size, bss_size = [int(x)for x in size_output.splitlines()[1].split()[:3]]
+		text_size, data_size, bss_size = \
+                [int(x)for x in size_output.splitlines()[1].split()[:3]]
 		app_ram_size = data_size + bss_size + text_size
 		max_app_ram = inject_metadata.MAX_APP_MEMORY_SIZE
 		free_size = max_app_ram-app_ram_size
-		Logs.pprint('YELLOW',"Memory usage:\n=============\n""Total app footprint in RAM:     %6u bytes / ~%ukb\n""Free RAM available (heap):      %6u bytes\n"%(app_ram_size,max_app_ram/1024,free_size))
-
-	self.bld(rule = report_memory_usage,
-                 name = 'report-memory-usage',
-                 source = [self.elf_file_node],
-                 target=None)
+		Logs.pprint('BLUE',"Memory usage:\n=============\n""Total app footprint in RAM:     %6u bytes / ~%ukb\n""Free RAM available (heap):      %6u bytes\n"%(app_ram_size,max_app_ram/1024,free_size))
 
 from waflib.Configure import conf
 @conf
