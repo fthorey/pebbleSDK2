@@ -11,6 +11,8 @@ Simply execute in this directory:
 
 And replace the generated **waf** script into your *PebbleSDK/Pebble* directory
 
+The refactored Pebble SDK build doesn't copy 'raw' resources from *resources/data* to *build/resources/data* because it's not necessary and generates (small) overhead. However, a python script called 'PblBuildCommand' in the Pebble SDK is run after the build and is in charge of checking correctness of generated resources. This script have been slightly modified. The 'ext' folder contains this modified 'PblBuildCommand' script that checks both *resources/data* and *build/resources/data* in case of 'raw' resources. If you don't want to get a warning at the end of the build about non-existing 'raw' resource, simply replace the file in '/PebbleSDK/tools/pebble/PblBuildCommand.py' by the one located in 'ext/PblBuildCommand.py'.
+
 Modifications
 -------------
 
